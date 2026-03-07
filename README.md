@@ -32,4 +32,5 @@ uv run pre-commit install --hook-type pre-commit --hook-type commit-msg
 이 프로젝트는 pre-commit hooks를 사용합니다.  
 코드가 자동으로 수정되면 커밋이 중단될 수 있으며, 수정된 파일을 확인한 뒤 다시 add하고 커밋하면 됩니다.
 
-Commit message convention은 이 [문서](https://commitizen-tools.github.io/commitizen/tutorials/writing_commits/)를 참고하세요.
+Commit message는 **영어로 작성해야 하며**, Conventional Commits 규칙을 따릅니다.  
+자세한 규칙은 이 [문서](https://commitizen-tools.github.io/commitizen/tutorials/writing_commits/)를 참고하세요.

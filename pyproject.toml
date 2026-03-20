@@ -11,3 +11,4 @@ dev = ["pre-commit>=4.5.1"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]

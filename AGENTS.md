@@ -39,12 +39,11 @@
 - Do not treat cache or sessions as durable business storage.
 - Do not rely on in-process memory for shared state.
 
-## Migrations
+## Database schema
 
-- Create migrations for model changes.
-- Do not edit old migrations unless explicitly required.
-- Do not squash migrations without explicit instruction.
-- Mention potentially risky migrations in the final summary.
+- Do not make database schema changes.
+- Do not create, edit, or apply migrations that change tables, columns, indexes, or constraints.
+- If a requested change would require a schema change, call it out in the final summary instead of making it.
 
 ## Quality checks
 

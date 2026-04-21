@@ -1,0 +1,16 @@
+<form action="{{ action|default:'/search/' }}"
+      method="get"
+      class="w-full"
+      hx-get="{{ action|default:'/search/' }}"
+      hx-target="{{ target|default:'#search-results' }}"
+      hx-trigger="keyup changed delay:300ms from:input, submit"
+      hx-push-url="true">
+    <div class="ambient-shadow flex items-center gap-3 rounded-[1.5rem] border border-stone-200/70 bg-surface-container-lowest px-4 py-3">
+        <span class="text-stone-400">⌕</span>
+        <input type="text"
+               name="q"
+               value="{{ request.GET.q }}"
+               placeholder="{{ placeholder|default:'검색어를 입력하세요' }}"
+               class="w-full border-0 bg-transparent p-0 text-sm text-on-surface placeholder:text-stone-400 focus:ring-0">
+    </div>
+</form>

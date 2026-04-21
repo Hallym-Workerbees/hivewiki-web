@@ -1,0 +1,19 @@
+{% extends "layouts/app.html" %}
+{% block title %}
+    HiveWiki | 커뮤니티
+{% endblock title %}
+{% block app_content %}
+    <section class="mx-auto max-w-7xl space-y-8">
+        {% include "partials/section_header.html" with eyebrow="Community" title="질문과 논의를 모으는 공간" description="커뮤니티 목록 페이지는 공용 포스트 카드와 상단 검색 입력을 그대로 재사용하는 형태로 설계했습니다." %}
+        <div class="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
+            <div class="space-y-4">
+                {% include "partials/feature_panel.html" with eyebrow="Flow" title="질문에서 문서로" description="논의가 충분히 정리되면 위키 문서로 연결하는 편집 흐름을 전제로 한 기본 사이드 패널입니다." cta_href="/wiki/" cta_label="위키 열기" %}
+            </div>
+            <div class="space-y-5">
+                {% for item in post_items %}
+                    {% include "partials/post_card.html" %}
+                {% endfor %}
+            </div>
+        </div>
+    </section>
+{% endblock app_content %}

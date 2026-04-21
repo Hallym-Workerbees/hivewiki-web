@@ -1,0 +1,27 @@
+{% extends "layouts/auth.html" %}
+{% block title %}
+    HiveWiki | 회원가입
+{% endblock title %}
+{% block auth_content %}
+    <div class="rounded-[2rem] bg-surface-container-low p-8">
+        <div class="text-xs uppercase tracking-[0.24em] text-stone-400">Account</div>
+        <h1 class="mt-3 font-headline text-4xl font-black tracking-tight">회원가입</h1>
+        <p class="mt-3 text-sm leading-7 text-on-surface-variant">닉네임, 이메일, 비밀번호를 검증한 뒤 `users` 테이블에 바로 계정을 생성합니다.</p>
+        <form method="post" class="mt-8 space-y-4">
+            {% csrf_token %}
+            {% include "partials/form_errors.html" with form=form %}
+            {% include "partials/auth_field.html" with field=form.username %}
+            {% include "partials/auth_field.html" with field=form.email %}
+            {% include "partials/auth_field.html" with field=form.password %}
+            {% include "partials/auth_field.html" with field=form.password_confirm %}
+            <button type="submit"
+                    class="w-full rounded-2xl bg-primary-container px-4 py-3 text-sm font-bold text-on-primary-container">
+                가입하기
+            </button>
+        </form>
+        <p class="mt-5 text-sm text-on-surface-variant">
+            이미 계정이 있나요?
+            <a href="{% url 'login' %}" class="font-semibold text-primary">로그인</a>
+        </p>
+    </div>
+{% endblock auth_content %}

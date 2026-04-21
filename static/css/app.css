@@ -1,0 +1,70 @@
+:root {
+  --primary: #785900;
+  --primary-container: #ffc107;
+  --on-primary-container: #6d5100;
+  --secondary: #745b1f;
+  --secondary-container: #ffdb92;
+  --on-secondary-container: #795f23;
+  --tertiary: #006877;
+  --surface: #fcf9f8;
+  --surface-bright: #fcf9f8;
+  --surface-lowest: #ffffff;
+  --surface-low: #f6f3f2;
+  --surface-container: #f0edec;
+  --surface-high: #ebe7e7;
+  --surface-highest: #e5e2e1;
+  --on-surface: #1c1b1b;
+  --on-surface-variant: #4f4632;
+  --outline-variant: rgba(212, 197, 171, 0.18);
+  --shadow-ambient: 0 12px 32px rgba(28, 27, 27, 0.06);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--surface);
+  color: var(--on-surface);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: "Manrope", sans-serif;
+}
+
+.glass-nav {
+  background: color-mix(in srgb, var(--surface-bright) 84%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.ambient-shadow {
+  box-shadow: var(--shadow-ambient);
+}
+
+.reading-prose p {
+  margin-bottom: 1.25rem;
+  color: var(--on-surface-variant);
+  line-height: 1.85;
+}
+
+.reading-prose h2,
+.reading-prose h3 {
+  margin-top: 3rem;
+  margin-bottom: 1rem;
+  color: var(--on-surface);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #d4c5ab;
+}

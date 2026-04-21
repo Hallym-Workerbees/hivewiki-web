@@ -1,0 +1,42 @@
+{% extends "layouts/app.html" %}
+{% block title %}
+    HiveWiki | Dashboard
+{% endblock title %}
+{% block app_content %}
+    <section class="mx-auto max-w-7xl space-y-12">
+        <section class="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+            <div class="rounded-[2rem] bg-surface-container-low p-8">
+                <div class="text-sm font-semibold text-primary">Dashboard</div>
+                <h1 class="mt-2 font-headline text-5xl font-black tracking-tight">오늘의 지식 흐름</h1>
+                <p class="mt-4 max-w-2xl text-sm leading-7 text-on-surface-variant">
+                    로그인 후 메인에서는 검색, 최신 문서, 커뮤니티 진입점을 한 화면에서 확인할 수 있게 배치했습니다.
+                </p>
+                <div class="mt-8 max-w-2xl">
+                    {% include "partials/search_bar.html" with placeholder="문서, 게시글, 태그를 검색하세요" action="/search/" target="#dashboard-search-results" %}
+                </div>
+            </div>
+            <div class="grid gap-4">
+                {% include "partials/stat_tile.html" with label="문서" value="128" description="빠르게 탐색할 수 있는 공용 아카이브 수" %}
+                {% include "partials/stat_tile.html" with label="질문" value="42" description="이번 주에 새로 축적된 커뮤니티 스레드 수" %}
+                {% include "partials/stat_tile.html" with label="연결" value="16" description="커뮤니티와 위키 사이의 최신 연결 수" %}
+            </div>
+        </section>
+        <div id="dashboard-search-results"></div>
+        <section class="space-y-5">
+            {% include "partials/section_header.html" with eyebrow="Wiki" title="최신 위키" description="재사용 가능한 문서 카드 컴포넌트를 기준으로 최신 문서 영역을 설계했습니다." href="/wiki/" link_text="전체 보기" %}
+            <div class="grid gap-5 lg:grid-cols-2">
+                {% for item in wiki_items %}
+                    {% include "partials/wiki_card.html" %}
+                {% endfor %}
+            </div>
+        </section>
+        <section class="space-y-5">
+            {% include "partials/section_header.html" with eyebrow="Community" title="최신 커뮤니티 글" description="질문, 회고, 공지처럼 서로 다른 성격의 글도 같은 카드 규칙으로 다룰 수 있게 구성했습니다." href="/community/" link_text="전체 보기" %}
+            <div class="space-y-5">
+                {% for item in post_items %}
+                    {% include "partials/post_card.html" %}
+                {% endfor %}
+            </div>
+        </section>
+    </section>
+{% endblock app_content %}

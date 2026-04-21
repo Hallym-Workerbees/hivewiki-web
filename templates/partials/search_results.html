@@ -1,0 +1,18 @@
+<div class="grid gap-6 lg:grid-cols-2">
+    <section class="space-y-4">
+        <h3 class="font-headline text-2xl font-extrabold tracking-tight">문서 결과</h3>
+        {% for item in wiki_items %}
+            {% include "partials/wiki_card.html" %}
+        {% empty %}
+            {% include "partials/empty_state.html" with title="문서 결과가 없습니다" description="다른 검색어로 다시 시도해 보세요." %}
+        {% endfor %}
+    </section>
+    <section class="space-y-4">
+        <h3 class="font-headline text-2xl font-extrabold tracking-tight">게시글 결과</h3>
+        {% for item in post_items %}
+            {% include "partials/post_card.html" %}
+        {% empty %}
+            {% include "partials/empty_state.html" with title="게시글 결과가 없습니다" description="태그나 핵심 용어로 다시 검색해 보세요." %}
+        {% endfor %}
+    </section>
+</div>

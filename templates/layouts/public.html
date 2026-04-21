@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block body %}
+    <div class="relative min-h-screen overflow-hidden bg-surface">
+        <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(255,193,7,0.22),_transparent_34%),radial-gradient(circle_at_bottom_right,_rgba(0,104,119,0.12),_transparent_28%)]">
+        </div>
+        <header class="glass-nav sticky top-0 z-40 border-b border-white/50">
+            <div class="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 lg:px-10">
+                <a href="{% url 'public_main' %}" class="flex items-center gap-3">
+                    <div class="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary-container text-lg font-black text-on-primary-container">
+                        H
+                    </div>
+                    <div>
+                        <div class="font-headline text-xl font-extrabold tracking-tight">HiveWiki</div>
+                        <div class="text-xs uppercase tracking-[0.24em] text-stone-500">Living Archive</div>
+                    </div>
+                </a>
+                <nav class="flex items-center gap-2">
+                    <a href="{% url 'integrated_search' %}"
+                       class="hidden rounded-xl px-4 py-2 text-sm font-semibold text-primary md:block">둘러보기</a>
+                    {% if current_user %}
+                        <a href="{% url 'dashboard' %}"
+                           class="rounded-xl px-4 py-2 text-sm font-semibold text-primary hover:bg-surface-container-high">대시보드</a>
+                        <form method="post" action="{% url 'logout' %}">
+                            {% csrf_token %}
+                            <button type="submit"
+                                    class="rounded-xl bg-primary-container px-4 py-2 text-sm font-bold text-on-primary-container">
+                                로그아웃
+                            </button>
+                        </form>
+                    {% else %}
+                        <a href="{% url 'login' %}"
+                           class="rounded-xl px-4 py-2 text-sm font-semibold text-primary hover:bg-surface-container-high">로그인</a>
+                        <a href="{% url 'signup' %}"
+                           class="rounded-xl bg-primary-container px-4 py-2 text-sm font-bold text-on-primary-container">회원가입</a>
+                    {% endif %}
+                </nav>
+            </div>
+        </header>
+        <main class="relative">
+            {% block content %}
+            {% endblock content %}
+        </main>
+    </div>
+{% endblock body %}

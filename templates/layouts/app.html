@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block body %}
+    <div class="min-h-screen bg-surface">
+        {% include "partials/sidebar.html" %}
+        <div class="lg:ml-72">
+            {% include "partials/topbar.html" %}
+            <main class="px-6 pb-12 pt-28 lg:px-10">
+                {% block app_content %}
+                {% endblock app_content %}
+            </main>
+        </div>
+    </div>
+{% endblock body %}

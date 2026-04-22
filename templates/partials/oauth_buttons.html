@@ -1,11 +1,49 @@
 {% if oauth_providers %}
-    <div class="mt-6 space-y-3">
-        <div class="text-xs font-semibold uppercase tracking-[0.24em] text-stone-400">Social Login</div>
-        <div class="grid gap-3">
+    <div class="mt-8">
+        <div class="flex items-center gap-3">
+            <div class="h-px flex-1 bg-stone-200"></div>
+            <div class="text-[11px] font-semibold uppercase tracking-[0.28em] text-stone-400">or continue with</div>
+            <div class="h-px flex-1 bg-stone-200"></div>
+        </div>
+        <div class="mt-5 grid gap-3">
             {% for oauth_provider in oauth_providers %}
                 <a href="{{ oauth_provider.start_url }}"
-                   class="flex items-center justify-center rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm font-semibold text-on-surface transition hover:bg-surface-container-high">
-                    {{ oauth_provider.label }}로 계속하기
+                   class="oauth-button group flex items-center gap-4 rounded-[1.4rem] border border-stone-200/90 bg-white px-4 py-3.5 text-on-surface ambient-shadow transition hover:-translate-y-0.5 hover:border-stone-300 hover:bg-stone-50">
+                    <span class="oauth-button__icon flex h-11 w-11 items-center justify-center rounded-2xl bg-stone-100 text-on-surface">
+                        {% if oauth_provider.provider == "google" %}
+                            <svg viewBox="0 0 24 24" class="h-5 w-5" aria-hidden="true">
+                                <path fill="#EA4335" d="M12 10.2v3.9h5.4c-.2 1.3-1.7 3.9-5.4 3.9-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.2.8 4 1.5l2.7-2.6C17 3.4 14.8 2.5 12 2.5A9.5 9.5 0 0 0 2.5 12 9.5 9.5 0 0 0 12 21.5c5.5 0 9.1-3.8 9.1-9.2 0-.6-.1-1.1-.2-1.6z">
+                                </path>
+                                <path fill="#34A853" d="M3.6 7.6 6.8 9.9C7.7 7.7 9.7 6 12 6c1.9 0 3.2.8 4 1.5l2.7-2.6C17 3.4 14.8 2.5 12 2.5c-3.6 0-6.8 2-8.4 5.1z">
+                                </path>
+                                <path fill="#FBBC05" d="M12 21.5c2.8 0 5.1-.9 6.8-2.5l-3.2-2.5c-.9.6-2 .9-3.6.9-3.6 0-5.1-2.4-5.4-3.6l-3.1 2.4A9.5 9.5 0 0 0 12 21.5z">
+                                </path>
+                                <path fill="#4285F4" d="M3.6 16.3 6.7 14c-.2-.6-.3-1.3-.3-2s.1-1.4.3-2L3.6 7.6A9.8 9.8 0 0 0 2.5 12c0 1.5.4 3 1.1 4.3z">
+                                </path>
+                            </svg>
+                        {% elif oauth_provider.provider == "github" %}
+                            <svg viewBox="0 0 24 24" class="h-5 w-5" aria-hidden="true">
+                                <path fill="currentColor" d="M12 .5A11.5 11.5 0 0 0 .5 12.3c0 5.2 3.4 9.6 8 11.1.6.1.8-.3.8-.6v-2.1c-3.2.7-3.9-1.4-3.9-1.4-.5-1.4-1.3-1.8-1.3-1.8-1.1-.8.1-.8.1-.8 1.2.1 1.9 1.3 1.9 1.3 1.1 1.9 2.9 1.4 3.5 1.1.1-.8.4-1.4.8-1.7-2.6-.3-5.4-1.4-5.4-6 0-1.3.4-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11 11 0 0 1 6 0c2.3-1.5 3.3-1.2 3.3-1.2.7 1.6.3 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.7-2.8 5.7-5.5 6 .4.4.8 1.1.8 2.2v3.2c0 .3.2.7.8.6 4.6-1.5 8-5.9 8-11.1A11.5 11.5 0 0 0 12 .5Z">
+                                </path>
+                            </svg>
+                        {% endif %}
+                    </span>
+                    <span class="min-w-0 flex-1">
+                        <span class="block text-left text-sm font-bold tracking-tight text-on-surface">{{ oauth_provider.label }}로 계속하기</span>
+                        <span class="mt-0.5 block text-left text-xs text-stone-500">
+                            {% if oauth_provider.provider == "google" %}
+                                Google 계정으로 로그인하거나 가입
+                            {% elif oauth_provider.provider == "github" %}
+                                GitHub 계정으로 로그인하거나 가입
+                            {% endif %}
+                        </span>
+                    </span>
+                    <span class="text-stone-300 transition group-hover:text-stone-500"
+                          aria-hidden="true">
+                        <svg viewBox="0 0 20 20" class="h-5 w-5 fill-current">
+                            <path d="M7.3 4.3a1 1 0 0 0 0 1.4L11.6 10l-4.3 4.3a1 1 0 1 0 1.4 1.4l5-5a1 1 0 0 0 0-1.4l-5-5a1 1 0 0 0-1.4 0z"></path>
+                        </svg>
+                    </span>
                 </a>
             {% endfor %}
         </div>

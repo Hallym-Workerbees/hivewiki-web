@@ -41,8 +41,6 @@
 
 ## Database schema
 
-- Do not make database schema changes.
-- Do not create, edit, or apply migrations that change tables, columns, indexes, or constraints.
 - If a requested change would require a schema change, call it out in the final summary instead of making it.
 
 ## Quality checks

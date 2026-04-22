@@ -75,6 +75,9 @@ Commit message는 **영어로 작성해야 하며**, Conventional Commits 규칙
 
 기본 예시는 [.env.example](./.env.example)에 있습니다. 로컬 개발에서는 `.env`를 사용하고, 배포에서는 인프라 레벨에서 동일한 키를 주입하면 됩니다.
 
+이 프로젝트는 핵심 설정에 대해 fallback을 두지 않습니다.  
+즉 `DJANGO_SECRET_KEY`, PostgreSQL 접속 정보, `REDIS_URL` 이 누락되면 앱이 시작되지 않습니다.
+
 ### Django 기본 설정
 
 - `DJANGO_SECRET_KEY`: Django secret key. 배포에서는 반드시 강한 랜덤 값 사용

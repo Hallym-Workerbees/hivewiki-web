@@ -1,6 +1,7 @@
 from django.contrib import messages
 from django.shortcuts import redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.decorators.http import require_POST
 
 from .decorators import login_required
 from .forms import LoginForm, PasswordChangeForm, ProfileEditForm, SignUpForm
@@ -94,10 +95,10 @@ def signup_view(request):
     return render(request, "pages/auth/signup.html", {"form": form})
 
 
+@require_POST
 def logout_view(request):
-    if request.method == "POST":
-        logout_user(request)
-        messages.success(request, "로그아웃되었습니다.")
+    logout_user(request)
+    messages.success(request, "로그아웃되었습니다.")
     return redirect("public_main")
 
 

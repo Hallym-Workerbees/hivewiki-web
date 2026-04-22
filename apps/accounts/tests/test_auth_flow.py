@@ -206,6 +206,11 @@ class AuthFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "현재 비밀번호가 올바르지 않습니다.")
 
+    def test_logout_requires_post(self):
+        response = self.client.get("/auth/logout/")
+
+        self.assertEqual(response.status_code, 405)
+
     @override_settings(
         LOGIN_RATE_LIMIT_ATTEMPTS=2,
         LOGIN_RATE_LIMIT_WINDOW_SECONDS=600,

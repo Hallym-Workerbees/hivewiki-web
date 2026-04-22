@@ -1,4 +1,5 @@
 from django.contrib import messages
+from django.http import Http404
 from django.shortcuts import redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
@@ -6,11 +7,17 @@ from django.views.decorators.http import require_POST
 from .decorators import login_required
 from .forms import LoginForm, PasswordChangeForm, ProfileEditForm, SignUpForm
 from .services import (
+    OAuthError,
     authenticate_user,
+    begin_oauth_flow,
     create_user,
+    exchange_oauth_code_for_profile,
     format_rate_limit_wait_time,
+    get_available_oauth_providers,
     get_client_ip,
     get_login_rate_limit_remaining_seconds,
+    get_oauth_provider_config,
+    get_or_create_user_from_oauth_profile,
     is_login_rate_limited,
     login_user,
     logout_user,
@@ -34,6 +41,7 @@ def login_view(request):
     form = LoginForm(request.POST or None)
     next_url = _get_safe_next_url(request)
     client_ip = get_client_ip(request)
+    oauth_providers = get_available_oauth_providers(request, next_url=next_url)
     if request.method == "POST" and form.is_valid():
         email = form.cleaned_data["email"]
         if is_login_rate_limited(email=email, client_ip=client_ip):
@@ -51,6 +59,7 @@ def login_view(request):
                 {
                     "form": form,
                     "next_url": next_url,
+                    "oauth_providers": oauth_providers,
                 },
             )
 
@@ -73,6 +82,7 @@ def login_view(request):
         {
             "form": form,
             "next_url": next_url,
+            "oauth_providers": oauth_providers,
         },
     )
 
@@ -82,6 +92,7 @@ def signup_view(request):
         return redirect("dashboard")
 
     form = SignUpForm(request.POST or None)
+    oauth_providers = get_available_oauth_providers(request)
     if request.method == "POST" and form.is_valid():
         user = create_user(
             username=form.cleaned_data["username"],
@@ -92,7 +103,14 @@ def signup_view(request):
         messages.success(request, f"{user.username}님, 가입이 완료되었습니다.")
         return redirect("dashboard")
 
-    return render(request, "pages/auth/signup.html", {"form": form})
+    return render(
+        request,
+        "pages/auth/signup.html",
+        {
+            "form": form,
+            "oauth_providers": oauth_providers,
+        },
+    )
 
 
 @require_POST
@@ -100,6 +118,52 @@ def logout_view(request):
     logout_user(request)
     messages.success(request, "로그아웃되었습니다.")
     return redirect("public_main")
+
+
+def oauth_start_view(request, provider: str):
+    next_url = _get_safe_next_url(request)
+    try:
+        redirect_url = begin_oauth_flow(
+            request,
+            provider=provider,
+            next_url=next_url,
+        )
+    except OAuthError as exc:
+        messages.error(request, str(exc))
+        return redirect("login")
+    except KeyError as exc:
+        raise Http404 from exc
+    return redirect(redirect_url)
+
+
+def oauth_callback_view(request, provider: str):
+    code = request.GET.get("code", "")
+    state = request.GET.get("state", "")
+    if not code or not state:
+        messages.error(request, "OAuth 응답이 올바르지 않습니다.")
+        return redirect("login")
+
+    try:
+        get_oauth_provider_config(provider)
+        profile, next_url = exchange_oauth_code_for_profile(
+            request,
+            provider=provider,
+            code=code,
+            state=state,
+        )
+        user = get_or_create_user_from_oauth_profile(
+            provider=provider,
+            profile=profile,
+        )
+    except OAuthError as exc:
+        messages.error(request, str(exc))
+        return redirect("login")
+    except KeyError as exc:
+        raise Http404 from exc
+
+    login_user(request, user)
+    messages.success(request, f"{user.username}님, 소셜 로그인이 완료되었습니다.")
+    return redirect(next_url or "dashboard")
 
 
 @login_required

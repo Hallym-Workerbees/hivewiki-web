@@ -10,16 +10,21 @@
         </div>
     </a>
     <nav class="space-y-2 text-sm">
+        {% url 'dashboard' as dashboard_url %}
+        {% url 'community_list' as community_list_url %}
+        {% url 'wiki_home' as wiki_home_url %}
+        {% url 'integrated_search' as integrated_search_url %}
+        {% url 'mypage' as mypage_url %}
         <a href="{% url 'dashboard' %}"
-           class="block rounded-2xl bg-surface-container-high px-4 py-3 font-bold text-primary">홈</a>
+           class="block rounded-2xl px-4 py-3 transition {% if request.path == dashboard_url %}bg-surface-container-high font-bold text-primary{% else %}text-on-surface-variant hover:bg-surface-container-high{% endif %}">홈</a>
         <a href="{% url 'community_list' %}"
-           class="block rounded-2xl px-4 py-3 text-on-surface-variant transition hover:bg-surface-container-high">커뮤니티</a>
+           class="block rounded-2xl px-4 py-3 transition {% if request.path == community_list_url %}bg-surface-container-high font-bold text-primary{% else %}text-on-surface-variant hover:bg-surface-container-high{% endif %}">커뮤니티</a>
         <a href="{% url 'wiki_home' %}"
-           class="block rounded-2xl px-4 py-3 text-on-surface-variant transition hover:bg-surface-container-high">위키</a>
+           class="block rounded-2xl px-4 py-3 transition {% if request.path == wiki_home_url %}bg-surface-container-high font-bold text-primary{% else %}text-on-surface-variant hover:bg-surface-container-high{% endif %}">위키</a>
         <a href="{% url 'integrated_search' %}"
-           class="block rounded-2xl px-4 py-3 text-on-surface-variant transition hover:bg-surface-container-high">통합 검색</a>
+           class="block rounded-2xl px-4 py-3 transition {% if request.path == integrated_search_url %}bg-surface-container-high font-bold text-primary{% else %}text-on-surface-variant hover:bg-surface-container-high{% endif %}">통합 검색</a>
         <a href="{% url 'mypage' %}"
-           class="block rounded-2xl px-4 py-3 text-on-surface-variant transition hover:bg-surface-container-high">마이페이지</a>
+           class="block rounded-2xl px-4 py-3 transition {% if request.path == mypage_url %}bg-surface-container-high font-bold text-primary{% else %}text-on-surface-variant hover:bg-surface-container-high{% endif %}">마이페이지</a>
     </nav>
     <div class="mt-10 rounded-[1.75rem] bg-stone-950 px-5 py-6 text-stone-100">
         {% if current_user %}

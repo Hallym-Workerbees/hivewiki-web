@@ -18,6 +18,7 @@
                 로그인
             </button>
         </form>
+        {% include "partials/oauth_buttons.html" %}
         <p class="mt-5 text-sm text-on-surface-variant">
             아직 계정이 없나요?
             <a href="{% url 'signup' %}" class="font-semibold text-primary">회원가입</a>

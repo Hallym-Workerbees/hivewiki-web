@@ -1,8 +1,10 @@
+from unittest.mock import patch
+
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.cache import cache
 from django.test import TestCase, override_settings
 
-from apps.accounts.models import HiveUser, UserStatus
+from apps.accounts.models import HiveUser, OAuthAccount, OAuthProvider, UserStatus
 from apps.accounts.services import SESSION_USER_ID_KEY
 
 
@@ -14,6 +16,10 @@ from apps.accounts.services import SESSION_USER_ID_KEY
             "LOCATION": "hivewiki-test-cache",
         }
     },
+    GOOGLE_OAUTH_CLIENT_ID="google-client-id",
+    GOOGLE_OAUTH_CLIENT_SECRET="google-client-secret",
+    GITHUB_OAUTH_CLIENT_ID="github-client-id",
+    GITHUB_OAUTH_CLIENT_SECRET="github-client-secret",
 )
 class AuthFlowTests(TestCase):
     SIGNUP_PASSWORD = "".join(["Strong", "Pass", "123"])
@@ -255,3 +261,84 @@ class AuthFlowTests(TestCase):
             blocked_response,
             "로그인 시도가 너무 많습니다. 약 10분 후 다시 시도해 주세요.",
         )
+
+    def test_login_page_renders_oauth_buttons_when_configured(self):
+        response = self.client.get("/auth/login/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Google로 계속하기")
+        self.assertContains(response, "GitHub로 계속하기")
+
+    @patch("apps.accounts.views.exchange_oauth_code_for_profile")
+    def test_google_oauth_callback_creates_user_and_logs_in(self, mock_exchange):
+        session = self.client.session
+        session["oauth_state"] = {
+            "provider": OAuthProvider.GOOGLE,
+            "state": "test-state",
+            "next_url": "",
+        }
+        session.save()
+        mock_exchange.return_value = (
+            {
+                "provider_user_id": "google-user-123",
+                "email": "oauth@example.com",
+                "provider_email": "oauth@example.com",
+                "username_hint": "oauthuser",
+            },
+            "",
+        )
+
+        response = self.client.get(
+            "/auth/oauth/google/callback/",
+            {"code": "auth-code", "state": "test-state"},
+        )
+
+        self.assertRedirects(response, "/dashboard/")
+        user = HiveUser.objects.get(email="oauth@example.com")
+        oauth_account = OAuthAccount.objects.get(
+            provider=OAuthProvider.GOOGLE,
+            provider_user_id="google-user-123",
+        )
+        self.assertEqual(oauth_account.user_id, user.id)
+        self.assertFalse(user.profile_image)
+        self.assertEqual(self.client.session[SESSION_USER_ID_KEY], str(user.id))
+
+    @patch("apps.accounts.views.exchange_oauth_code_for_profile")
+    def test_github_oauth_callback_links_existing_user(self, mock_exchange):
+        user = HiveUser.objects.create(
+            username="existing_user",
+            email="existing@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+        session = self.client.session
+        session["oauth_state"] = {
+            "provider": OAuthProvider.GITHUB,
+            "state": "test-state",
+            "next_url": "/me/",
+        }
+        session.save()
+        mock_exchange.return_value = (
+            {
+                "provider_user_id": "github-user-456",
+                "email": "existing@example.com",
+                "provider_email": "existing@example.com",
+                "username_hint": "octocat",
+            },
+            "/me/",
+        )
+
+        response = self.client.get(
+            "/auth/oauth/github/callback/",
+            {"code": "auth-code", "state": "test-state"},
+        )
+
+        self.assertRedirects(response, "/me/")
+        oauth_account = OAuthAccount.objects.get(
+            provider=OAuthProvider.GITHUB,
+            provider_user_id="github-user-456",
+        )
+        self.assertEqual(oauth_account.user_id, user.id)
+        user.refresh_from_db()
+        self.assertFalse(user.profile_image)
+        self.assertEqual(self.client.session[SESSION_USER_ID_KEY], str(user.id))

@@ -46,6 +46,14 @@ h6 {
   box-shadow: var(--shadow-ambient);
 }
 
+.flash-message {
+  animation: flash-enter 180ms ease-out;
+}
+
+.flash-message.is-hiding {
+  animation: flash-exit 220ms ease-in forwards;
+}
+
 .reading-prose p {
   margin-bottom: 1.25rem;
   color: var(--on-surface-variant);
@@ -67,4 +75,28 @@ h6 {
 ::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: #d4c5ab;
+}
+
+@keyframes flash-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes flash-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
 }

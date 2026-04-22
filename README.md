@@ -111,6 +111,16 @@ Commit message는 **영어로 작성해야 하며**, Conventional Commits 규칙
 현재 구현은 `client_ip + email` 기준으로 실패 횟수를 캐시에 저장합니다.  
 앞단 프록시가 실제 클라이언트 IP를 정리해 준다는 전제에서, 앱은 `DJANGO_CLIENT_IP_HEADER` 또는 `REMOTE_ADDR`를 사용합니다.
 
+### OAuth
+
+- `GOOGLE_OAUTH_CLIENT_ID`: Google OAuth client ID
+- `GOOGLE_OAUTH_CLIENT_SECRET`: Google OAuth client secret
+- `GITHUB_OAUTH_CLIENT_ID`: GitHub OAuth app client ID
+- `GITHUB_OAUTH_CLIENT_SECRET`: GitHub OAuth app client secret
+
+OAuth callback URL은 현재 요청의 host/scheme를 기준으로 서버에서 생성합니다.  
+배포 환경에서는 프록시/Ingress 설정과 `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `DJANGO_SECURE_PROXY_SSL_HEADER`가 올바르게 맞아 있어야 합니다.
+
 ### 데이터베이스 / 캐시
 
 - `POSTGRES_DB`: PostgreSQL 데이터베이스 이름

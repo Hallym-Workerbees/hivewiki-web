@@ -1,0 +1,14 @@
+<div class="flex items-end justify-between gap-4">
+    <div>
+        {% if eyebrow %}
+            <div class="text-xs font-semibold uppercase tracking-[0.24em] text-stone-400">{{ eyebrow }}</div>
+        {% endif %}
+        <h2 class="mt-2 font-headline text-3xl font-black tracking-tight">{{ title }}</h2>
+        {% if description %}
+            <p class="mt-3 max-w-2xl text-sm leading-7 text-on-surface-variant">{{ description }}</p>
+        {% endif %}
+    </div>
+    {% if href and link_text %}
+        <a href="{{ href }}" class="text-sm font-semibold text-primary">{{ link_text }}</a>
+    {% endif %}
+</div>

@@ -1,0 +1,15 @@
+<header class="glass-nav fixed inset-x-0 top-0 z-40 border-b border-white/60 lg:left-72">
+    <div class="flex items-center justify-between px-6 py-4 lg:px-10">
+        <div>
+            <div class="text-xs font-semibold uppercase tracking-[0.22em] text-stone-400">HiveWiki</div>
+            <div class="font-headline text-xl font-extrabold tracking-tight">{{ page_heading|default:"Dashboard" }}</div>
+        </div>
+        <div class="hidden items-center gap-4 md:flex">
+            {% include "partials/search_bar.html" with placeholder="지식과 게시글을 검색하세요" action=search_action|default:"/search/" target=search_target|default:"#global-search-results" %}
+            {% if current_user %}
+                <a href="{% url 'mypage' %}"
+                   class="rounded-2xl bg-surface-container-low px-4 py-3 text-sm font-semibold text-on-surface-variant">{{ current_user.username }}</a>
+            {% endif %}
+        </div>
+    </div>
+</header>

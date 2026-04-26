@@ -1,0 +1,69 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ko">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>
+            {% block title %}
+                HiveWiki
+            {% endblock title %}
+        </title>
+        <meta name="description"
+              content="HiveWiki는 공동체의 질문과 문서를 연결하는 서버 렌더링 기반 지식 허브입니다.">
+        <meta name="keywords" content="HiveWiki, Django, HTMX, Wiki, Community">
+        <script src="https://cdn.tailwindcss.com?plugins=forms,typography,container-queries"></script>
+        <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: "#785900",
+            "primary-container": "#ffc107",
+            "on-primary-container": "#6d5100",
+            secondary: "#745b1f",
+            "secondary-container": "#ffdb92",
+            "on-secondary-container": "#795f23",
+            tertiary: "#006877",
+            surface: "#fcf9f8",
+            "surface-bright": "#fcf9f8",
+            "surface-container-lowest": "#ffffff",
+            "surface-container-low": "#f6f3f2",
+            "surface-container": "#f0edec",
+            "surface-container-high": "#ebe7e7",
+            "surface-container-highest": "#e5e2e1",
+            "on-surface": "#1c1b1b",
+            "on-surface-variant": "#4f4632",
+            "outline-variant": "#d4c5ab",
+            error: "#ba1a1a",
+            "error-container": "#ffdad6",
+          },
+          fontFamily: {
+            headline: ["Manrope", "sans-serif"],
+            body: ["Inter", "sans-serif"],
+          },
+          boxShadow: {
+            ambient: "0 12px 32px rgba(28, 27, 27, 0.04)",
+          },
+        },
+      },
+    }
+        </script>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Manrope:wght@200..800&display=swap"
+              rel="stylesheet">
+        <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+        <link rel="stylesheet" href="{% static 'css/app.css' %}">
+        {% block head %}
+        {% endblock head %}
+    </head>
+    <body class="bg-surface font-body text-on-surface antialiased">
+        {% include "partials/flash.html" %}
+        {% block body %}
+        {% endblock body %}
+        <script src="{% static 'js/app.js' %}"></script>
+        {% block script %}
+        {% endblock script %}
+    </body>
+</html>

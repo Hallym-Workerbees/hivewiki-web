@@ -1,0 +1,26 @@
+{% extends "layouts/app.html" %}
+{% block title %}
+    HiveWiki | 프로필 수정
+{% endblock title %}
+{% block app_content %}
+    <section class="mx-auto max-w-4xl space-y-8">
+        {% include "partials/section_header.html" with eyebrow="Profile" title="프로필 수정" description="닉네임, 이메일, 프로필 이미지를 수정할 수 있습니다." %}
+        <section class="rounded-[2rem] bg-surface-container-low p-8">
+            <form method="post" class="space-y-5">
+                {% csrf_token %}
+                {% include "partials/form_errors.html" with form=form %}
+                {% include "partials/auth_field.html" with field=form.username %}
+                {% include "partials/auth_field.html" with field=form.email %}
+                {% include "partials/auth_field.html" with field=form.profile_image %}
+                <div class="flex flex-wrap gap-3">
+                    <button type="submit"
+                            class="rounded-2xl bg-primary-container px-5 py-3 text-sm font-bold text-on-primary-container">
+                        저장하기
+                    </button>
+                    <a href="{% url 'mypage' %}"
+                       class="rounded-2xl bg-surface-container-high px-5 py-3 text-sm font-semibold text-primary">취소</a>
+                </div>
+            </form>
+        </section>
+    </section>
+{% endblock app_content %}

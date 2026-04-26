@@ -1,0 +1,38 @@
+{% extends "layouts/public.html" %}
+{% block title %}
+    HiveWiki | 지식 허브
+{% endblock title %}
+{% block content %}
+    <section class="mx-auto max-w-7xl px-6 py-16 lg:px-10 lg:py-24">
+        <div class="grid gap-12 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
+            <div>
+                <div class="inline-flex rounded-full bg-secondary-container px-3 py-1 text-xs font-bold text-on-secondary-container">
+                    Foundation Layout
+                </div>
+                <h1 class="mt-6 max-w-4xl font-headline text-5xl font-black tracking-tight text-on-surface lg:text-7xl">
+                    학교 공동체의 질문과 문서를 하나의 흐름으로 엮습니다.
+                </h1>
+                <p class="mt-6 max-w-2xl text-base leading-8 text-on-surface-variant lg:text-lg">
+                    커뮤니티에서 나온 문제의식이 위키 문서로 정리되고, 다시 검색과 탐색 경험으로 이어지는 구조를 기본 화면에 반영했습니다.
+                </p>
+                <div class="mt-8 flex flex-wrap gap-3">
+                    <a href="{% url 'signup' %}"
+                       class="rounded-xl bg-primary-container px-5 py-3 text-sm font-bold text-on-primary-container">지금 시작하기</a>
+                    <a href="{% url 'integrated_search' %}"
+                       class="rounded-xl bg-surface-container-low px-5 py-3 text-sm font-semibold text-primary">검색 먼저 보기</a>
+                </div>
+                <div class="mt-10 max-w-2xl">
+                    {% include "partials/search_bar.html" with placeholder="궁금한 문서나 게시글을 검색해보세요" action="/search/" target="#preview-results" %}
+                </div>
+                <div id="preview-results" class="mt-6"></div>
+            </div>
+            <div class="grid gap-5">
+                {% include "partials/feature_panel.html" with eyebrow="Editorial Surface" title="Warm surface, honey accent, no-line spacing" description="초안의 톤을 유지하면서 랜딩 상단에 강한 소개 영역을 두고, 오른쪽에는 실제 카드 컴포넌트를 배치했습니다." cta_href="/search/" cta_label="검색 레이아웃 보기" %}
+                <div class="grid gap-4 rounded-[2rem] bg-surface-container-low p-6 lg:p-7">
+                    {% include "partials/wiki_card.html" with item=featured_wiki %}
+                    {% include "partials/post_card.html" with item=featured_post %}
+                </div>
+            </div>
+        </div>
+    </section>
+{% endblock content %}

@@ -1,0 +1,43 @@
+{% extends "layouts/app.html" %}
+{% block title %}
+    HiveWiki | 마이페이지
+{% endblock title %}
+{% block app_content %}
+    <section class="mx-auto max-w-7xl space-y-8">
+        {% include "partials/section_header.html" with eyebrow="My Page" title="내 계정" description="현재 로그인한 사용자 정보를 확인하고 프로필을 관리하는 기본 화면입니다." %}
+        <div class="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+            <section class="rounded-[2rem] bg-surface-container-low p-8">
+                <div class="flex items-center gap-5">
+                    <div class="flex h-20 w-20 items-center justify-center rounded-[1.75rem] bg-primary-container text-3xl font-black text-on-primary-container">
+                        {{ profile_user.username|first|upper }}
+                    </div>
+                    <div>
+                        <div class="text-xs uppercase tracking-[0.24em] text-stone-400">{{ profile_user.role }}</div>
+                        <h1 class="mt-2 font-headline text-4xl font-black tracking-tight">{{ profile_user.username }}</h1>
+                        <p class="mt-2 text-sm text-on-surface-variant">{{ profile_user.email }}</p>
+                    </div>
+                </div>
+                <div class="mt-8 flex flex-wrap gap-3">
+                    <a href="{% url 'profile_edit' %}"
+                       class="inline-flex rounded-2xl bg-primary-container px-5 py-3 text-sm font-bold text-on-primary-container">프로필 수정</a>
+                    <a href="{% url 'password_change' %}"
+                       class="inline-flex rounded-2xl bg-surface-container-high px-5 py-3 text-sm font-semibold text-primary">비밀번호 변경</a>
+                </div>
+            </section>
+            <section class="grid gap-4">
+                {% include "partials/stat_tile.html" with label="상태" value=profile_user.status description="현재 계정 상태입니다." %}
+                {% include "partials/stat_tile.html" with label="가입일" value=profile_user.created_at|date:"Y.m.d" description="HiveWiki에 처음 등록된 날짜입니다." %}
+                {% include "partials/stat_tile.html" with label="최근 변경" value=profile_user.updated_at|date:"Y.m.d H:i" description="프로필이 마지막으로 수정된 시각입니다." %}
+            </section>
+        </div>
+        <section class="rounded-[2rem] bg-surface-container-lowest p-8 ambient-shadow">
+            <div class="text-xs uppercase tracking-[0.24em] text-stone-400">Profile Image</div>
+            <h2 class="mt-2 font-headline text-3xl font-black tracking-tight">프로필 이미지</h2>
+            {% if profile_user.profile_image %}
+                <p class="mt-4 break-all text-sm leading-7 text-on-surface-variant">{{ profile_user.profile_image }}</p>
+            {% else %}
+                <p class="mt-4 text-sm leading-7 text-on-surface-variant">아직 프로필 이미지가 설정되지 않았습니다.</p>
+            {% endif %}
+        </section>
+    </section>
+{% endblock app_content %}

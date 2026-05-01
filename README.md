@@ -99,9 +99,30 @@ Commit message는 **영어로 작성해야 하며**, Conventional Commits 규칙
 - `DJANGO_SECURE_HSTS_PRELOAD`: HSTS preload 선언 여부
 - `DJANGO_SECURE_CONTENT_TYPE_NOSNIFF`: `X-Content-Type-Options: nosniff` 사용 여부
 - `DJANGO_X_FRAME_OPTIONS`: `X-Frame-Options` 값. 기본 `DENY`
+- `DJANGO_LOG_LEVEL`: 애플리케이션 로그 레벨. 기본 `INFO`
+- `DJANGO_LOG_JSON`: JSON 구조화 로그 사용 여부. 기본 `True`
 - `DJANGO_SECURE_PROXY_SSL_HEADER`: 프록시 뒤에서 HTTPS 판별에 사용할 헤더
   예: `HTTP_X_FORWARDED_PROTO,https`
 - `SESSION_COOKIE_AGE`: 세션 유지 시간. 초 단위
+
+### 로깅
+
+애플리케이션은 표준 출력으로 JSON 구조화 로그를 남깁니다. 요청 로그에는 최소한 아래 필드가 포함됩니다.
+
+- `timestamp`
+- `level`
+- `logger`
+- `message`
+- `request_id`
+- `upstream_request_id`
+- `method`
+- `path`
+- `status_code`
+- `duration_ms`
+- `user_id`
+- `remote_addr`
+
+애플리케이션은 내부 `request_id`를 항상 새로 생성하고 응답 헤더 `X-Request-ID`에도 같은 값을 돌려줍니다. 앞단 프록시나 Ingress가 `X-Request-ID`를 넘기면 `upstream_request_id`로 별도 기록합니다.
 
 ### 로그인 rate limit
 

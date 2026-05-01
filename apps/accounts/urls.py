@@ -6,6 +6,7 @@ urlpatterns = [
     path("auth/login/", views.login_view, name="login"),
     path("auth/signup/", views.signup_view, name="signup"),
     path("auth/logout/", views.logout_view, name="logout"),
+    path("auth/timezone/", views.set_timezone_view, name="set_timezone"),
     path("auth/oauth/<str:provider>/", views.oauth_start_view, name="oauth_start"),
     path(
         "auth/oauth/<str:provider>/callback/",

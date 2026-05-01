@@ -67,6 +67,15 @@ h6 {
   animation: flash-exit 220ms ease-in forwards;
 }
 
+.js-timezone-pending .timezone-sensitive {
+  visibility: hidden;
+}
+
+.timezone-sensitive {
+  display: inline-block;
+  min-width: 6ch;
+}
+
 .reading-prose p {
   margin-bottom: 1.25rem;
   color: var(--on-surface-variant);

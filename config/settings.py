@@ -5,6 +5,7 @@ import environ
 BASE_DIR = Path(__file__).resolve().parent.parent
 env = environ.Env(
     DJANGO_DEBUG=(bool, True),
+    DJANGO_LOG_JSON=(bool, True),
     DJANGO_SESSION_COOKIE_SECURE=(bool, False),
     DJANGO_CSRF_COOKIE_SECURE=(bool, False),
     DJANGO_SECURE_SSL_REDIRECT=(bool, False),
@@ -13,6 +14,7 @@ env = environ.Env(
     DJANGO_SECURE_HSTS_PRELOAD=(bool, False),
     DJANGO_SECURE_CONTENT_TYPE_NOSNIFF=(bool, True),
     DJANGO_X_FRAME_OPTIONS=("str", "DENY"),
+    DJANGO_LOG_LEVEL=("str", "INFO"),
     LOGIN_RATE_LIMIT_ATTEMPTS=(int, 5),
     LOGIN_RATE_LIMIT_WINDOW_SECONDS=(int, 600),
 )
@@ -20,6 +22,7 @@ environ.Env.read_env(BASE_DIR / ".env")
 
 SECRET_KEY = env("DJANGO_SECRET_KEY")
 DEBUG = env("DJANGO_DEBUG")
+DJANGO_LOG_JSON = env("DJANGO_LOG_JSON")
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=[])
 CSRF_TRUSTED_ORIGINS = env.list("DJANGO_CSRF_TRUSTED_ORIGINS", default=[])
 CLIENT_IP_HEADER = env("DJANGO_CLIENT_IP_HEADER", default="")
@@ -50,8 +53,10 @@ MIDDLEWARE = [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
-    "apps.accounts.middleware.CurrentUserMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.accounts.middleware.CurrentUserMiddleware",
+    "apps.accounts.middleware.TimezoneMiddleware",
+    "config.logging.RequestLoggingMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "django_htmx.middleware.HtmxMiddleware",
@@ -121,6 +126,7 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = env("DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS")
 SECURE_HSTS_PRELOAD = env("DJANGO_SECURE_HSTS_PRELOAD")
 SECURE_CONTENT_TYPE_NOSNIFF = env("DJANGO_SECURE_CONTENT_TYPE_NOSNIFF")
 X_FRAME_OPTIONS = env("DJANGO_X_FRAME_OPTIONS", default="DENY")
+DJANGO_LOG_LEVEL = env("DJANGO_LOG_LEVEL")
 
 secure_proxy_ssl_header = env("DJANGO_SECURE_PROXY_SSL_HEADER", default="")
 if secure_proxy_ssl_header:
@@ -165,6 +171,52 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {
+        "request_context": {
+            "()": "config.logging.RequestContextFilter",
+        },
+    },
+    "formatters": {
+        "json": {
+            "()": "config.logging.JsonFormatter",
+        },
+        "plain": {
+            "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "filters": ["request_context"],
+            "formatter": "json" if DJANGO_LOG_JSON else "plain",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": DJANGO_LOG_LEVEL,
+    },
+    "loggers": {
+        "django": {
+            "handlers": ["console"],
+            "level": DJANGO_LOG_LEVEL,
+            "propagate": False,
+        },
+        "django.server": {
+            "handlers": ["console"],
+            "level": DJANGO_LOG_LEVEL,
+            "propagate": False,
+        },
+        "hivewiki.request": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

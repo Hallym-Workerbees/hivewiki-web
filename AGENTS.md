@@ -24,6 +24,8 @@
 - Reuse existing Tailwind patterns and keep class lists readable.
 - Avoid unnecessary dependencies and unrelated refactors.
 - Use structured JSON logging via the existing logging setup; do not add `print()` debugging.
+- When adding application logs, prefer `logging.getLogger(__name__)` and keep logs compatible with the JSON stdout formatter.
+- Preserve request log context fields such as `request_id`, `method`, `path`, `status_code`, `duration_ms`, `user_id`, and `remote_addr`.
 
 ## htmx
 
@@ -38,6 +40,8 @@
 - Valkey (Redis-compatible) is used for sessions and caching.
 - Do not treat cache or sessions as durable business storage.
 - Do not rely on in-process memory for shared state.
+- Datetimes should remain UTC in the database. User-facing rendering should use the browser timezone captured in session storage.
+- The browser timezone is stored in session key `django_timezone` and must survive login/logout flows that call `session.flush()`.
 
 ## Database schema
 
@@ -47,6 +51,7 @@
 
 - Keep changes compatible with pre-commit: uv-lock, Ruff, djLint, gitleaks, Commitizen.
 - Run `pre-commit run --all-files` before finalizing changes when practical.
+- When local tooling depends on the project devshell, prefer `nix develop --command ...` for `uv`, Django management commands, tests, and pre-commit.
 
 ## Deployment awareness
 
@@ -59,3 +64,4 @@
 - Make the smallest change that fully solves the problem.
 - Do not modify unrelated files.
 - Do not introduce secrets or hardcoded environment-specific values.
+- If a template renders timezone-sensitive timestamps, use the existing `timezone-sensitive` UI pattern so incorrect server-time first paint is hidden until browser timezone sync completes.

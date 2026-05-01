@@ -5,6 +5,7 @@ import environ
 BASE_DIR = Path(__file__).resolve().parent.parent
 env = environ.Env(
     DJANGO_DEBUG=(bool, True),
+    DJANGO_LOG_JSON=(bool, True),
     DJANGO_SESSION_COOKIE_SECURE=(bool, False),
     DJANGO_CSRF_COOKIE_SECURE=(bool, False),
     DJANGO_SECURE_SSL_REDIRECT=(bool, False),
@@ -21,6 +22,7 @@ environ.Env.read_env(BASE_DIR / ".env")
 
 SECRET_KEY = env("DJANGO_SECRET_KEY")
 DEBUG = env("DJANGO_DEBUG")
+DJANGO_LOG_JSON = env("DJANGO_LOG_JSON")
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=[])
 CSRF_TRUSTED_ORIGINS = env.list("DJANGO_CSRF_TRUSTED_ORIGINS", default=[])
 CLIENT_IP_HEADER = env("DJANGO_CLIENT_IP_HEADER", default="")
@@ -49,11 +51,11 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
-    "apps.accounts.middleware.TimezoneMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
-    "apps.accounts.middleware.CurrentUserMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "apps.accounts.middleware.CurrentUserMiddleware",
+    "apps.accounts.middleware.TimezoneMiddleware",
     "config.logging.RequestLoggingMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
@@ -182,12 +184,15 @@ LOGGING = {
         "json": {
             "()": "config.logging.JsonFormatter",
         },
+        "plain": {
+            "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
+        },
     },
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
             "filters": ["request_context"],
-            "formatter": "json",
+            "formatter": "json" if DJANGO_LOG_JSON else "plain",
         },
     },
     "root": {

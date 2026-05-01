@@ -134,20 +134,25 @@ def authenticate_user(*, email: str, password: str) -> HiveUser | None:
     return user
 
 
-def login_user(request, user: HiveUser) -> None:
-    browser_timezone = request.session.get(TIMEZONE_SESSION_KEY)
+def _reset_session_preserving(request, *keys: str) -> None:
+    preserved_values = {
+        key: request.session.get(key)
+        for key in keys
+        if request.session.get(key) is not None
+    }
     request.session.flush()
-    if browser_timezone:
-        request.session[TIMEZONE_SESSION_KEY] = browser_timezone
+    for key, value in preserved_values.items():
+        request.session[key] = value
+
+
+def login_user(request, user: HiveUser) -> None:
+    _reset_session_preserving(request, TIMEZONE_SESSION_KEY)
     request.session[SESSION_USER_ID_KEY] = str(user.id)
     request.session.cycle_key()
 
 
 def logout_user(request) -> None:
-    browser_timezone = request.session.get(TIMEZONE_SESSION_KEY)
-    request.session.flush()
-    if browser_timezone:
-        request.session[TIMEZONE_SESSION_KEY] = browser_timezone
+    _reset_session_preserving(request, TIMEZONE_SESSION_KEY)
 
 
 def update_user_password(*, user: HiveUser, new_password: str) -> HiveUser:

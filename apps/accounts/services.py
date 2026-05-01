@@ -6,6 +6,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from json import loads
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
@@ -17,6 +18,7 @@ from .models import HiveUser, OAuthAccount, OAuthProvider, UserStatus
 
 SESSION_USER_ID_KEY = "hivewiki_user_id"
 OAUTH_STATE_SESSION_KEY = "oauth_state"
+TIMEZONE_SESSION_KEY = "django_timezone"
 
 
 @dataclass(frozen=True)
@@ -133,13 +135,19 @@ def authenticate_user(*, email: str, password: str) -> HiveUser | None:
 
 
 def login_user(request, user: HiveUser) -> None:
+    browser_timezone = request.session.get(TIMEZONE_SESSION_KEY)
     request.session.flush()
+    if browser_timezone:
+        request.session[TIMEZONE_SESSION_KEY] = browser_timezone
     request.session[SESSION_USER_ID_KEY] = str(user.id)
     request.session.cycle_key()
 
 
 def logout_user(request) -> None:
+    browser_timezone = request.session.get(TIMEZONE_SESSION_KEY)
     request.session.flush()
+    if browser_timezone:
+        request.session[TIMEZONE_SESSION_KEY] = browser_timezone
 
 
 def update_user_password(*, user: HiveUser, new_password: str) -> HiveUser:
@@ -165,6 +173,20 @@ def get_current_user(request) -> HiveUser | None:
     )
     request._cached_hivewiki_user = user
     return user
+
+
+def set_browser_timezone(request, timezone_name: str) -> bool:
+    normalized_timezone = (timezone_name or "").strip()
+    if not normalized_timezone:
+        return False
+
+    try:
+        ZoneInfo(normalized_timezone)
+    except ZoneInfoNotFoundError:
+        return False
+
+    request.session[TIMEZONE_SESSION_KEY] = normalized_timezone
+    return True
 
 
 def _oauth_provider_configs() -> dict[str, OAuthProviderConfig]:

@@ -1,6 +1,8 @@
 {% load static %}
+{% load tz %}
 <!DOCTYPE html>
 <html lang="ko">
+    {% get_current_timezone as CURRENT_TIME_ZONE %}
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -55,10 +57,22 @@
               rel="stylesheet">
         <script src="https://unpkg.com/htmx.org@1.9.12"></script>
         <link rel="stylesheet" href="{% static 'css/app.css' %}">
+        <noscript>
+            <style>
+      .js-timezone-pending .timezone-sensitive {
+        visibility: visible;
+      }
+            </style>
+        </noscript>
         {% block head %}
         {% endblock head %}
     </head>
-    <body class="bg-surface font-body text-on-surface antialiased">
+    <body class="js-timezone-pending bg-surface font-body text-on-surface antialiased"
+          data-current-timezone="{{ CURRENT_TIME_ZONE }}"
+          data-timezone-sync-url="{% url 'set_timezone' %}">
+        <form id="timezone-sync-form" class="hidden">
+            {% csrf_token %}
+        </form>
         {% include "partials/flash.html" %}
         {% block body %}
         {% endblock body %}

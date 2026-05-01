@@ -1,5 +1,5 @@
 from django.contrib import messages
-from django.http import Http404
+from django.http import Http404, HttpResponse
 from django.shortcuts import redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
@@ -23,6 +23,7 @@ from .services import (
     logout_user,
     record_failed_login,
     reset_login_rate_limit,
+    set_browser_timezone,
     update_user_password,
 )
 
@@ -118,6 +119,14 @@ def logout_view(request):
     logout_user(request)
     messages.success(request, "로그아웃되었습니다.")
     return redirect("public_main")
+
+
+@require_POST
+def set_timezone_view(request):
+    timezone_name = request.POST.get("timezone", "")
+    if not set_browser_timezone(request, timezone_name):
+        return HttpResponse(status=400)
+    return HttpResponse(status=204)
 
 
 def oauth_start_view(request, provider: str):

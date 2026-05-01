@@ -5,7 +5,7 @@ from django.core.cache import cache
 from django.test import TestCase, override_settings
 
 from apps.accounts.models import HiveUser, OAuthAccount, OAuthProvider, UserStatus
-from apps.accounts.services import SESSION_USER_ID_KEY
+from apps.accounts.services import SESSION_USER_ID_KEY, TIMEZONE_SESSION_KEY
 
 
 @override_settings(
@@ -34,6 +34,11 @@ class AuthFlowTests(TestCase):
     def _login(self, user):
         session = self.client.session
         session[SESSION_USER_ID_KEY] = str(user.id)
+        session.save()
+
+    def _set_timezone(self, timezone_name: str):
+        session = self.client.session
+        session[TIMEZONE_SESSION_KEY] = timezone_name
         session.save()
 
     def test_signup_creates_user_and_logs_in(self):
@@ -216,6 +221,61 @@ class AuthFlowTests(TestCase):
         response = self.client.get("/auth/logout/")
 
         self.assertEqual(response.status_code, 405)
+
+    def test_set_timezone_stores_browser_timezone_in_session(self):
+        response = self.client.post(
+            "/auth/timezone/",
+            {
+                "timezone": "America/Los_Angeles",
+            },
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(
+            self.client.session[TIMEZONE_SESSION_KEY],
+            "America/Los_Angeles",
+        )
+
+    def test_set_timezone_rejects_invalid_timezone(self):
+        response = self.client.post(
+            "/auth/timezone/",
+            {
+                "timezone": "Not/A_Real_Timezone",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertNotIn(TIMEZONE_SESSION_KEY, self.client.session)
+
+    def test_current_timezone_is_reflected_in_rendered_page(self):
+        self._set_timezone("America/Los_Angeles")
+
+        response = self.client.get("/")
+
+        self.assertContains(response, 'data-current-timezone="America/Los_Angeles"')
+
+    def test_login_preserves_browser_timezone_in_session(self):
+        self._set_timezone("America/Los_Angeles")
+        HiveUser.objects.create(
+            username="timezone_user",
+            email="timezone@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+
+        response = self.client.post(
+            "/auth/login/",
+            {
+                "email": "timezone@example.com",
+                "password": self.LOGIN_PASSWORD,
+            },
+        )
+
+        self.assertRedirects(response, "/dashboard/")
+        self.assertEqual(
+            self.client.session[TIMEZONE_SESSION_KEY],
+            "America/Los_Angeles",
+        )
 
     @override_settings(
         LOGIN_RATE_LIMIT_ATTEMPTS=2,

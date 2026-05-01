@@ -26,8 +26,8 @@
             </section>
             <section class="grid gap-4">
                 {% include "partials/stat_tile.html" with label="상태" value=profile_user.status description="현재 계정 상태입니다." %}
-                {% include "partials/stat_tile.html" with label="가입일" value=profile_user.created_at|date:"Y.m.d" description="HiveWiki에 처음 등록된 날짜입니다." %}
-                {% include "partials/stat_tile.html" with label="최근 변경" value=profile_user.updated_at|date:"Y.m.d H:i" description="프로필이 마지막으로 수정된 시각입니다." %}
+                {% include "partials/stat_tile.html" with label="가입일" value=profile_user.created_at|date:"Y.m.d" value_class="timezone-sensitive" description="HiveWiki에 처음 등록된 날짜입니다." %}
+                {% include "partials/stat_tile.html" with label="최근 변경" value=profile_user.updated_at|date:"Y.m.d H:i" value_class="timezone-sensitive" description="프로필이 마지막으로 수정된 시각입니다." %}
             </section>
         </div>
         <section class="rounded-[2rem] bg-surface-container-lowest p-8 ambient-shadow">

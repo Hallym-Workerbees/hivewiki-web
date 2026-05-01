@@ -13,6 +13,7 @@ env = environ.Env(
     DJANGO_SECURE_HSTS_PRELOAD=(bool, False),
     DJANGO_SECURE_CONTENT_TYPE_NOSNIFF=(bool, True),
     DJANGO_X_FRAME_OPTIONS=("str", "DENY"),
+    DJANGO_LOG_LEVEL=("str", "INFO"),
     LOGIN_RATE_LIMIT_ATTEMPTS=(int, 5),
     LOGIN_RATE_LIMIT_WINDOW_SECONDS=(int, 600),
 )
@@ -48,10 +49,12 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    "apps.accounts.middleware.TimezoneMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "apps.accounts.middleware.CurrentUserMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "config.logging.RequestLoggingMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "django_htmx.middleware.HtmxMiddleware",
@@ -121,6 +124,7 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = env("DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS")
 SECURE_HSTS_PRELOAD = env("DJANGO_SECURE_HSTS_PRELOAD")
 SECURE_CONTENT_TYPE_NOSNIFF = env("DJANGO_SECURE_CONTENT_TYPE_NOSNIFF")
 X_FRAME_OPTIONS = env("DJANGO_X_FRAME_OPTIONS", default="DENY")
+DJANGO_LOG_LEVEL = env("DJANGO_LOG_LEVEL")
 
 secure_proxy_ssl_header = env("DJANGO_SECURE_PROXY_SSL_HEADER", default="")
 if secure_proxy_ssl_header:
@@ -165,6 +169,49 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATICFILES_DIRS = [BASE_DIR / "static"]
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {
+        "request_context": {
+            "()": "config.logging.RequestContextFilter",
+        },
+    },
+    "formatters": {
+        "json": {
+            "()": "config.logging.JsonFormatter",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "filters": ["request_context"],
+            "formatter": "json",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": DJANGO_LOG_LEVEL,
+    },
+    "loggers": {
+        "django": {
+            "handlers": ["console"],
+            "level": DJANGO_LOG_LEVEL,
+            "propagate": False,
+        },
+        "django.server": {
+            "handlers": ["console"],
+            "level": DJANGO_LOG_LEVEL,
+            "propagate": False,
+        },
+        "hivewiki.request": {
+            "handlers": ["console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.cache import cache
+from django.db import IntegrityError, transaction
 from django.urls import reverse
 from django.utils import timezone
 
@@ -19,6 +20,9 @@ from .models import HiveUser, OAuthAccount, OAuthProvider, UserStatus
 SESSION_USER_ID_KEY = "hivewiki_user_id"
 OAUTH_STATE_SESSION_KEY = "oauth_state"
 TIMEZONE_SESSION_KEY = "django_timezone"
+PENDING_OAUTH_CONFIRM_SESSION_KEY = "pending_oauth_confirm"
+OAUTH_ACTION_LOGIN = "login"
+OAUTH_ACTION_LINK = "link"
 
 
 @dataclass(frozen=True)
@@ -129,9 +133,53 @@ def authenticate_user(*, email: str, password: str) -> HiveUser | None:
     )
     if not user or not user.password_hash:
         return None
+    if OAuthAccount.objects.filter(user=user).exists():
+        return None
     if not check_password(password, user.password_hash):
         return None
     return user
+
+
+def get_active_user_by_email(email: str) -> HiveUser | None:
+    return (
+        HiveUser.objects.filter(email__iexact=email, status=UserStatus.ACTIVE)
+        .only("id", "username", "email", "password_hash", "status")
+        .first()
+    )
+
+
+def get_user_oauth_accounts(user: HiveUser):
+    return user.oauth_accounts.order_by("provider", "-last_login_at")
+
+
+def get_unlinked_oauth_providers(request, *, user: HiveUser) -> list[dict[str, str]]:
+    linked_providers = set(user.oauth_accounts.values_list("provider", flat=True))
+    providers = []
+    for provider_info in get_available_oauth_providers(
+        request,
+        route_name="oauth_link_start",
+    ):
+        if provider_info["provider"] in linked_providers:
+            continue
+        providers.append(provider_info)
+    return providers
+
+
+def get_existing_oauth_account_for_profile(
+    *, provider: str, profile: dict
+) -> OAuthAccount | None:
+    return (
+        OAuthAccount.objects.select_related("user")
+        .filter(
+            provider=provider,
+            provider_user_id=profile["provider_user_id"],
+        )
+        .first()
+    )
+
+
+def get_existing_user_for_oauth_email(profile: dict) -> HiveUser | None:
+    return HiveUser.objects.filter(email__iexact=profile["email"]).first()
 
 
 def _reset_session_preserving(request, *keys: str) -> None:
@@ -157,6 +205,14 @@ def logout_user(request) -> None:
 
 def update_user_password(*, user: HiveUser, new_password: str) -> HiveUser:
     user.password_hash = make_password(new_password)
+    user.save(update_fields=["password_hash", "updated_at"])
+    return user
+
+
+def disable_password_login(*, user: HiveUser) -> HiveUser:
+    if user.password_hash is None:
+        return user
+    user.password_hash = None
     user.save(update_fields=["password_hash", "updated_at"])
     return user
 
@@ -218,13 +274,13 @@ def _oauth_provider_configs() -> dict[str, OAuthProviderConfig]:
 
 
 def get_available_oauth_providers(
-    request, *, next_url: str = ""
+    request, *, next_url: str = "", route_name: str = "oauth_start"
 ) -> list[dict[str, str]]:
     providers = []
     for provider, config in _oauth_provider_configs().items():
         if not config.client_id or not config.client_secret:
             continue
-        start_url = reverse("oauth_start", kwargs={"provider": provider})
+        start_url = reverse(route_name, kwargs={"provider": provider})
         if next_url:
             start_url = f"{start_url}?{urllib.parse.urlencode({'next': next_url})}"
         providers.append(
@@ -253,13 +309,22 @@ def _oauth_callback_url(request, provider: str) -> str:
     return request.build_absolute_uri(path)
 
 
-def begin_oauth_flow(request, *, provider: str, next_url: str = "") -> str:
+def begin_oauth_flow(
+    request,
+    *,
+    provider: str,
+    next_url: str = "",
+    action: str = OAUTH_ACTION_LOGIN,
+    link_user: HiveUser | None = None,
+) -> str:
     config = get_oauth_provider_config(provider)
     state = secrets.token_urlsafe(32)
     request.session[OAUTH_STATE_SESSION_KEY] = {
         "provider": provider,
         "state": state,
         "next_url": next_url,
+        "action": action,
+        "link_user_id": str(link_user.id) if link_user is not None else "",
     }
     params = {
         "client_id": config.client_id,
@@ -316,7 +381,7 @@ def _github_primary_email(access_token: str) -> str | None:
 
 def exchange_oauth_code_for_profile(
     request, *, provider: str, code: str, state: str
-) -> tuple[dict, str]:
+) -> tuple[dict, dict]:
     session_state = request.session.get(OAUTH_STATE_SESSION_KEY) or {}
     if session_state.get("provider") != provider or session_state.get("state") != state:
         raise OAuthError("OAuth state 검증에 실패했습니다. 다시 시도해 주세요.")
@@ -387,7 +452,7 @@ def exchange_oauth_code_for_profile(
         raise OAuthError("OAuth 사용자 정보를 가져오지 못했습니다.") from exc
 
     request.session.pop(OAUTH_STATE_SESSION_KEY, None)
-    return oauth_profile, session_state.get("next_url", "")
+    return oauth_profile, session_state
 
 
 def _build_unique_username(base_value: str) -> str:
@@ -409,37 +474,104 @@ def get_or_create_user_from_oauth_profile(*, provider: str, profile: dict) -> Hi
     email = profile["email"]
     provider_email = profile.get("provider_email")
 
-    oauth_account = (
-        OAuthAccount.objects.select_related("user")
-        .filter(provider=provider, provider_user_id=provider_user_id)
-        .first()
-    )
-    if oauth_account:
-        if oauth_account.user.status != UserStatus.ACTIVE:
-            raise OAuthError("현재 계정 상태로는 소셜 로그인을 사용할 수 없습니다.")
-        oauth_account.provider_email = provider_email
-        oauth_account.last_login_at = timezone.now()
-        oauth_account.save(update_fields=["provider_email", "last_login_at"])
-        return oauth_account.user
+    try:
+        with transaction.atomic():
+            oauth_account = (
+                OAuthAccount.objects.select_related("user")
+                .select_for_update()
+                .filter(provider=provider, provider_user_id=provider_user_id)
+                .first()
+            )
+            if oauth_account:
+                if oauth_account.user.status != UserStatus.ACTIVE:
+                    raise OAuthError(
+                        "현재 계정 상태로는 소셜 로그인을 사용할 수 없습니다."
+                    )
+                oauth_account.provider_email = provider_email
+                oauth_account.last_login_at = timezone.now()
+                oauth_account.save(update_fields=["provider_email", "last_login_at"])
+                disable_password_login(user=oauth_account.user)
+                return oauth_account.user
 
-    user = HiveUser.objects.filter(email__iexact=email).first()
-    if user is not None and user.status != UserStatus.ACTIVE:
-        raise OAuthError("현재 계정 상태로는 소셜 로그인을 사용할 수 없습니다.")
-    if user is None:
-        user = HiveUser.objects.create(
-            username=_build_unique_username(
-                profile.get("username_hint", email.split("@")[0])
-            ),
-            email=email,
-            password_hash=None,
-            status=UserStatus.ACTIVE,
-        )
+            user = (
+                HiveUser.objects.select_for_update().filter(email__iexact=email).first()
+            )
+            if user is not None and user.status != UserStatus.ACTIVE:
+                raise OAuthError("현재 계정 상태로는 소셜 로그인을 사용할 수 없습니다.")
+            if user is None:
+                user = HiveUser.objects.create(
+                    username=_build_unique_username(
+                        profile.get("username_hint", email.split("@")[0])
+                    ),
+                    email=email,
+                    password_hash=None,
+                    status=UserStatus.ACTIVE,
+                )
 
-    OAuthAccount.objects.create(
-        user=user,
-        provider=provider,
-        provider_user_id=provider_user_id,
-        provider_email=provider_email,
-        last_login_at=timezone.now(),
-    )
-    return user
+            OAuthAccount.objects.create(
+                user=user,
+                provider=provider,
+                provider_user_id=provider_user_id,
+                provider_email=provider_email,
+                last_login_at=timezone.now(),
+            )
+            disable_password_login(user=user)
+            return user
+    except IntegrityError as exc:
+        raise OAuthError(
+            "OAuth 계정 연결을 완료하지 못했습니다. 다시 시도해 주세요."
+        ) from exc
+
+
+def link_oauth_account_to_user(
+    *, user: HiveUser, provider: str, profile: dict
+) -> OAuthAccount:
+    try:
+        with transaction.atomic():
+            locked_user = HiveUser.objects.select_for_update().get(pk=user.pk)
+            if locked_user.status != UserStatus.ACTIVE:
+                raise OAuthError("현재 계정 상태로는 소셜 로그인을 연동할 수 없습니다.")
+
+            email = profile["email"].strip().lower()
+            provider_user_id = profile["provider_user_id"]
+            provider_email = profile.get("provider_email")
+
+            if locked_user.email.strip().lower() != email:
+                raise OAuthError(
+                    "현재 계정 이메일과 같은 OAuth 계정만 연동할 수 있습니다."
+                )
+
+            existing_account = (
+                OAuthAccount.objects.select_related("user")
+                .select_for_update()
+                .filter(provider=provider, provider_user_id=provider_user_id)
+                .first()
+            )
+            if existing_account and existing_account.user_id != locked_user.id:
+                raise OAuthError("이미 다른 계정에 연결된 OAuth 계정입니다.")
+            if existing_account and existing_account.user_id == locked_user.id:
+                existing_account.provider_email = provider_email
+                existing_account.last_login_at = timezone.now()
+                existing_account.save(update_fields=["provider_email", "last_login_at"])
+                disable_password_login(user=locked_user)
+                return existing_account
+
+            existing_provider_link = locked_user.oauth_accounts.filter(
+                provider=provider
+            ).first()
+            if existing_provider_link:
+                raise OAuthError("이미 같은 provider가 현재 계정에 연결되어 있습니다.")
+
+            oauth_account = OAuthAccount.objects.create(
+                user=locked_user,
+                provider=provider,
+                provider_user_id=provider_user_id,
+                provider_email=provider_email,
+                last_login_at=timezone.now(),
+            )
+            disable_password_login(user=locked_user)
+            return oauth_account
+    except IntegrityError as exc:
+        raise OAuthError(
+            "OAuth 계정 연결을 완료하지 못했습니다. 다시 시도해 주세요."
+        ) from exc

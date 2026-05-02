@@ -4,6 +4,41 @@ document.body.addEventListener("htmx:afterSwap", (event) => {
     target.dataset.lastUpdated = "true";
   }
   formatTimezoneSensitiveElements(document.body.dataset.currentTimezone);
+  formatLocalDatetimeInputs(document.body.dataset.currentTimezone);
+});
+
+function closeAdminModal() {
+  const modalRoot = document.querySelector("#admin-modal-root");
+  if (!modalRoot) {
+    return;
+  }
+  modalRoot.innerHTML = "";
+}
+
+document.body.addEventListener("click", (event) => {
+  const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+  const closeTrigger =
+    path.find(
+      (node) =>
+        node instanceof Element && node.hasAttribute("data-admin-modal-close")
+    ) ||
+    (event.target instanceof Element
+      ? event.target.closest("[data-admin-modal-close]")
+      : null);
+  if (!closeTrigger) {
+    return;
+  }
+  closeAdminModal();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") {
+    return;
+  }
+  if (!document.querySelector("[data-admin-modal]")) {
+    return;
+  }
+  closeAdminModal();
 });
 
 function markTimezoneReady() {
@@ -55,6 +90,42 @@ function formatTimezoneSensitiveElements(timezoneName) {
   });
 }
 
+function formatDateTimeLocalValue(date, timezoneName) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezoneName,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const values = Object.fromEntries(
+    formatter.formatToParts(date).map(({ type, value }) => [type, value])
+  );
+  return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
+}
+
+function formatLocalDatetimeInputs(timezoneName) {
+  if (!timezoneName) {
+    return;
+  }
+
+  document.querySelectorAll("[data-local-datetime-input]").forEach((element) => {
+    const datetimeValue = element.dataset.localDatetimeSource;
+    if (!datetimeValue) {
+      return;
+    }
+
+    const date = new Date(datetimeValue);
+    if (Number.isNaN(date.getTime())) {
+      return;
+    }
+
+    element.value = formatDateTimeLocalValue(date, timezoneName);
+  });
+}
+
 async function syncBrowserTimezone() {
   const currentTimezone = document.body.dataset.currentTimezone;
   const syncUrl = document.body.dataset.timezoneSyncUrl;
@@ -62,6 +133,7 @@ async function syncBrowserTimezone() {
 
   if (!syncUrl || !csrfInput) {
     formatTimezoneSensitiveElements(currentTimezone);
+    formatLocalDatetimeInputs(currentTimezone);
     markTimezoneReady();
     return;
   }
@@ -69,12 +141,14 @@ async function syncBrowserTimezone() {
   const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   if (!browserTimezone) {
     formatTimezoneSensitiveElements(currentTimezone);
+    formatLocalDatetimeInputs(currentTimezone);
     markTimezoneReady();
     return;
   }
 
   if (browserTimezone === currentTimezone) {
     formatTimezoneSensitiveElements(browserTimezone);
+    formatLocalDatetimeInputs(browserTimezone);
     markTimezoneReady();
     return;
   }
@@ -95,6 +169,7 @@ async function syncBrowserTimezone() {
     if (response.ok) {
       document.body.dataset.currentTimezone = browserTimezone;
       formatTimezoneSensitiveElements(browserTimezone);
+      formatLocalDatetimeInputs(browserTimezone);
       markTimezoneReady();
       return;
     }
@@ -103,6 +178,7 @@ async function syncBrowserTimezone() {
   }
 
   formatTimezoneSensitiveElements(currentTimezone);
+  formatLocalDatetimeInputs(currentTimezone);
   markTimezoneReady();
 }
 

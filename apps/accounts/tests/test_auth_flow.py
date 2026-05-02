@@ -139,6 +139,8 @@ class AuthFlowTests(TestCase):
         self.assertContains(response, "profile_user")
         self.assertContains(response, "profile@example.com")
         self.assertContains(response, "https://example.com/avatar.png")
+        self.assertContains(response, "비밀번호 변경")
+        self.assertContains(response, "Google 연결")
 
     def test_profile_edit_updates_current_user(self):
         user = HiveUser.objects.create(
@@ -216,6 +218,75 @@ class AuthFlowTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "현재 비밀번호가 올바르지 않습니다.")
+
+    def test_password_login_is_blocked_after_oauth_is_connected(self):
+        user = HiveUser.objects.create(
+            username="oauth_locked",
+            email="oauthlocked@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+        OAuthAccount.objects.create(
+            user=user,
+            provider=OAuthProvider.GOOGLE,
+            provider_user_id="google-user-locked",
+            provider_email="oauthlocked@example.com",
+        )
+
+        response = self.client.post(
+            "/auth/login/",
+            {
+                "email": "oauthlocked@example.com",
+                "password": self.LOGIN_PASSWORD,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "이 계정은 OAuth 로그인만 사용할 수 있습니다.")
+        self.assertNotIn(SESSION_USER_ID_KEY, self.client.session)
+
+    def test_password_change_redirects_when_oauth_is_connected(self):
+        user = HiveUser.objects.create(
+            username="oauth_only_user",
+            email="oauthonly@example.com",
+            password_hash=None,
+            status=UserStatus.ACTIVE,
+        )
+        OAuthAccount.objects.create(
+            user=user,
+            provider=OAuthProvider.GITHUB,
+            provider_user_id="github-oauth-only",
+            provider_email="oauthonly@example.com",
+        )
+        self._login(user)
+
+        response = self.client.get("/me/password/")
+
+        self.assertRedirects(response, "/me/")
+
+    def test_mypage_hides_password_change_when_oauth_is_connected(self):
+        user = HiveUser.objects.create(
+            username="linked_user",
+            email="linked@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+        OAuthAccount.objects.create(
+            user=user,
+            provider=OAuthProvider.GITHUB,
+            provider_user_id="github-linked-user",
+            provider_email="linked@example.com",
+        )
+        self._login(user)
+
+        response = self.client.get("/me/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "OAuth가 연결된 이후부터는 비밀번호 로그인과 비밀번호 변경이 비활성화됩니다.",
+        )
+        self.assertNotContains(response, 'href="/me/password/"')
 
     def test_logout_requires_post(self):
         response = self.client.get("/auth/logout/")
@@ -345,7 +416,13 @@ class AuthFlowTests(TestCase):
                 "provider_email": "oauth@example.com",
                 "username_hint": "oauthuser",
             },
-            "",
+            {
+                "provider": OAuthProvider.GOOGLE,
+                "state": "test-state",
+                "next_url": "",
+                "action": "login",
+                "link_user_id": "",
+            },
         )
 
         response = self.client.get(
@@ -364,7 +441,9 @@ class AuthFlowTests(TestCase):
         self.assertEqual(self.client.session[SESSION_USER_ID_KEY], str(user.id))
 
     @patch("apps.accounts.views.exchange_oauth_code_for_profile")
-    def test_github_oauth_callback_links_existing_user(self, mock_exchange):
+    def test_github_oauth_callback_requires_confirmation_for_existing_user(
+        self, mock_exchange
+    ):
         user = HiveUser.objects.create(
             username="existing_user",
             email="existing@example.com",
@@ -385,7 +464,13 @@ class AuthFlowTests(TestCase):
                 "provider_email": "existing@example.com",
                 "username_hint": "octocat",
             },
-            "/me/",
+            {
+                "provider": OAuthProvider.GITHUB,
+                "state": "test-state",
+                "next_url": "/me/",
+                "action": "login",
+                "link_user_id": "",
+            },
         )
 
         response = self.client.get(
@@ -393,12 +478,223 @@ class AuthFlowTests(TestCase):
             {"code": "auth-code", "state": "test-state"},
         )
 
-        self.assertRedirects(response, "/me/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "기존 계정에 연결할까요?")
+        self.assertContains(response, "existing@example.com")
+        self.assertFalse(
+            OAuthAccount.objects.filter(
+                provider=OAuthProvider.GITHUB,
+                provider_user_id="github-user-456",
+            ).exists()
+        )
+        self.assertEqual(
+            self.client.session["pending_oauth_confirm"]["user_id"],
+            str(user.id),
+        )
+
+    @patch("apps.accounts.views.exchange_oauth_code_for_profile")
+    def test_confirm_existing_oauth_link_logs_in_and_disables_password(
+        self, mock_exchange
+    ):
+        user = HiveUser.objects.create(
+            username="existing_user",
+            email="existing@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+        session = self.client.session
+        session["oauth_state"] = {
+            "provider": OAuthProvider.GITHUB,
+            "state": "test-state",
+            "next_url": "/me/",
+        }
+        session.save()
+        mock_exchange.return_value = (
+            {
+                "provider_user_id": "github-user-456",
+                "email": "existing@example.com",
+                "provider_email": "existing@example.com",
+                "username_hint": "octocat",
+            },
+            {
+                "provider": OAuthProvider.GITHUB,
+                "state": "test-state",
+                "next_url": "/me/",
+                "action": "login",
+                "link_user_id": "",
+            },
+        )
+
+        callback_response = self.client.get(
+            "/auth/oauth/github/callback/",
+            {"code": "auth-code", "state": "test-state"},
+        )
+
+        self.assertEqual(callback_response.status_code, 200)
+
+        confirm_response = self.client.post(
+            "/auth/oauth/confirm-existing/",
+            {"decision": "confirm"},
+        )
+
+        self.assertRedirects(confirm_response, "/me/")
         oauth_account = OAuthAccount.objects.get(
             provider=OAuthProvider.GITHUB,
             provider_user_id="github-user-456",
         )
         self.assertEqual(oauth_account.user_id, user.id)
         user.refresh_from_db()
-        self.assertFalse(user.profile_image)
+        self.assertIsNone(user.password_hash)
         self.assertEqual(self.client.session[SESSION_USER_ID_KEY], str(user.id))
+        self.assertNotIn("pending_oauth_confirm", self.client.session)
+
+    @patch("apps.accounts.views.exchange_oauth_code_for_profile")
+    def test_cancel_existing_oauth_link_preserves_next_url(self, mock_exchange):
+        HiveUser.objects.create(
+            username="existing_user",
+            email="existing@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+        session = self.client.session
+        session["oauth_state"] = {
+            "provider": OAuthProvider.GITHUB,
+            "state": "test-state",
+            "next_url": "/community/",
+        }
+        session.save()
+        mock_exchange.return_value = (
+            {
+                "provider_user_id": "github-user-456",
+                "email": "existing@example.com",
+                "provider_email": "existing@example.com",
+                "username_hint": "octocat",
+            },
+            {
+                "provider": OAuthProvider.GITHUB,
+                "state": "test-state",
+                "next_url": "/community/",
+                "action": "login",
+                "link_user_id": "",
+            },
+        )
+
+        callback_response = self.client.get(
+            "/auth/oauth/github/callback/",
+            {"code": "auth-code", "state": "test-state"},
+        )
+
+        self.assertEqual(callback_response.status_code, 200)
+
+        cancel_response = self.client.post(
+            "/auth/oauth/confirm-existing/",
+            {"decision": "cancel"},
+        )
+
+        self.assertRedirects(cancel_response, "/auth/login/?next=%2Fcommunity%2F")
+        self.assertFalse(
+            OAuthAccount.objects.filter(
+                provider=OAuthProvider.GITHUB,
+                provider_user_id="github-user-456",
+            ).exists()
+        )
+        self.assertNotIn("pending_oauth_confirm", self.client.session)
+
+    @patch("apps.accounts.views.exchange_oauth_code_for_profile")
+    def test_oauth_link_callback_links_current_user_and_disables_password(
+        self, mock_exchange
+    ):
+        user = HiveUser.objects.create(
+            username="link_target",
+            email="link@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+        self._login(user)
+        session = self.client.session
+        session["oauth_state"] = {
+            "provider": OAuthProvider.GOOGLE,
+            "state": "link-state",
+            "next_url": "/me/",
+            "action": "link",
+            "link_user_id": str(user.id),
+        }
+        session.save()
+        mock_exchange.return_value = (
+            {
+                "provider_user_id": "google-link-123",
+                "email": "link@example.com",
+                "provider_email": "link@example.com",
+                "username_hint": "linkuser",
+            },
+            {
+                "provider": OAuthProvider.GOOGLE,
+                "state": "link-state",
+                "next_url": "/me/",
+                "action": "link",
+                "link_user_id": str(user.id),
+            },
+        )
+
+        response = self.client.get(
+            "/auth/oauth/google/callback/",
+            {"code": "auth-code", "state": "link-state"},
+        )
+
+        self.assertRedirects(response, "/me/")
+        user.refresh_from_db()
+        self.assertIsNone(user.password_hash)
+        self.assertTrue(
+            OAuthAccount.objects.filter(
+                user=user,
+                provider=OAuthProvider.GOOGLE,
+                provider_user_id="google-link-123",
+            ).exists()
+        )
+
+    @patch("apps.accounts.views.exchange_oauth_code_for_profile")
+    def test_oauth_link_callback_rejects_different_email(self, mock_exchange):
+        user = HiveUser.objects.create(
+            username="link_target",
+            email="link@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+        self._login(user)
+        session = self.client.session
+        session["oauth_state"] = {
+            "provider": OAuthProvider.GITHUB,
+            "state": "link-state",
+            "next_url": "/me/",
+            "action": "link",
+            "link_user_id": str(user.id),
+        }
+        session.save()
+        mock_exchange.return_value = (
+            {
+                "provider_user_id": "github-link-123",
+                "email": "other@example.com",
+                "provider_email": "other@example.com",
+                "username_hint": "otheruser",
+            },
+            {
+                "provider": OAuthProvider.GITHUB,
+                "state": "link-state",
+                "next_url": "/me/",
+                "action": "link",
+                "link_user_id": str(user.id),
+            },
+        )
+
+        response = self.client.get(
+            "/auth/oauth/github/callback/",
+            {"code": "auth-code", "state": "link-state"},
+        )
+
+        self.assertRedirects(response, "/me/")
+        self.assertFalse(
+            OAuthAccount.objects.filter(
+                user=user,
+                provider=OAuthProvider.GITHUB,
+            ).exists()
+        )

@@ -1,0 +1,12 @@
+<nav class="flex flex-wrap gap-3">
+    <a href="{% url 'admin_console' %}"
+       class="rounded-2xl px-4 py-3 text-sm font-semibold transition {% if admin_section == 'dashboard' %}bg-primary-container text-on-primary-container{% else %}bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high{% endif %}">전체 대시보드</a>
+    <a href="{% url 'admin_user_management' %}"
+       class="rounded-2xl px-4 py-3 text-sm font-semibold transition {% if admin_section == 'users' %}bg-primary-container text-on-primary-container{% else %}bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high{% endif %}">유저 관리</a>
+    <a href="{% url 'admin_tag_management' %}"
+       class="rounded-2xl px-4 py-3 text-sm font-semibold transition {% if admin_section == 'tags' %}bg-primary-container text-on-primary-container{% else %}bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high{% endif %}">태그 관리</a>
+    <a href="{% url 'admin_ingestion_management' %}"
+       class="rounded-2xl px-4 py-3 text-sm font-semibold transition {% if admin_section == 'ingestion' %}bg-primary-container text-on-primary-container{% else %}bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high{% endif %}">데이터 수집</a>
+    <a href="{% url 'admin_content_management' %}"
+       class="rounded-2xl px-4 py-3 text-sm font-semibold transition {% if admin_section == 'content' %}bg-primary-container text-on-primary-container{% else %}bg-surface-container-low text-on-surface-variant hover:bg-surface-container-high{% endif %}">콘텐츠 관리</a>
+</nav>

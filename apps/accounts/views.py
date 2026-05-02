@@ -1,24 +1,37 @@
+from urllib.parse import urlencode
+
 from django.contrib import messages
 from django.http import Http404, HttpResponse
 from django.shortcuts import redirect, render
+from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from .decorators import login_required
 from .forms import LoginForm, PasswordChangeForm, ProfileEditForm, SignUpForm
+from .models import HiveUser, UserStatus
 from .services import (
+    OAUTH_ACTION_LINK,
+    PENDING_OAUTH_CONFIRM_SESSION_KEY,
     OAuthError,
     authenticate_user,
     begin_oauth_flow,
     create_user,
     exchange_oauth_code_for_profile,
     format_rate_limit_wait_time,
+    get_active_user_by_email,
     get_available_oauth_providers,
     get_client_ip,
+    get_current_user,
+    get_existing_oauth_account_for_profile,
+    get_existing_user_for_oauth_email,
     get_login_rate_limit_remaining_seconds,
     get_oauth_provider_config,
     get_or_create_user_from_oauth_profile,
+    get_unlinked_oauth_providers,
+    get_user_oauth_accounts,
     is_login_rate_limited,
+    link_oauth_account_to_user,
     login_user,
     logout_user,
     record_failed_login,
@@ -33,6 +46,12 @@ def _get_safe_next_url(request):
     if url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
         return next_url
     return ""
+
+
+def _redirect_to_login(next_url: str = ""):
+    if next_url:
+        return redirect(f"{reverse('login')}?{urlencode({'next': next_url})}")
+    return redirect("login")
 
 
 def login_view(request):
@@ -70,7 +89,14 @@ def login_view(request):
         )
         if user is None:
             record_failed_login(email=email, client_ip=client_ip)
-            form.add_error(None, "이메일 또는 비밀번호가 올바르지 않습니다.")
+            existing_user = get_active_user_by_email(email)
+            if existing_user and existing_user.oauth_accounts.exists():
+                form.add_error(
+                    None,
+                    "이 계정은 OAuth 로그인만 사용할 수 있습니다. 연결된 소셜 로그인으로 접속해 주세요.",
+                )
+            else:
+                form.add_error(None, "이메일 또는 비밀번호가 올바르지 않습니다.")
         else:
             reset_login_rate_limit(email=email, client_ip=client_ip)
             login_user(request, user)
@@ -145,6 +171,68 @@ def oauth_start_view(request, provider: str):
     return redirect(redirect_url)
 
 
+@login_required
+def oauth_link_start_view(request, provider: str):
+    current_user = request.current_user
+    try:
+        redirect_url = begin_oauth_flow(
+            request,
+            provider=provider,
+            next_url=reverse("mypage"),
+            action=OAUTH_ACTION_LINK,
+            link_user=current_user,
+        )
+    except OAuthError as exc:
+        messages.error(request, str(exc))
+        return redirect("mypage")
+    except KeyError as exc:
+        raise Http404 from exc
+    return redirect(redirect_url)
+
+
+@require_POST
+def oauth_confirm_existing_account_view(request):
+    pending_confirmation = request.session.get(PENDING_OAUTH_CONFIRM_SESSION_KEY) or {}
+    if not pending_confirmation:
+        messages.error(
+            request, "확인할 OAuth 연동 정보가 없습니다. 다시 시도해 주세요."
+        )
+        return redirect("login")
+
+    next_url = pending_confirmation.get("next_url", "")
+    decision = request.POST.get("decision", "")
+    request.session.pop(PENDING_OAUTH_CONFIRM_SESSION_KEY, None)
+    if decision != "confirm":
+        messages.info(request, "OAuth 계정 연결을 취소했습니다.")
+        return _redirect_to_login(next_url)
+
+    try:
+        user = HiveUser.objects.get(
+            id=pending_confirmation["user_id"],
+            status=UserStatus.ACTIVE,
+        )
+        link_oauth_account_to_user(
+            user=user,
+            provider=pending_confirmation["provider"],
+            profile=pending_confirmation["profile"],
+        )
+    except (HiveUser.DoesNotExist, KeyError, OAuthError) as exc:
+        messages.error(
+            request,
+            str(exc)
+            if isinstance(exc, OAuthError)
+            else "기존 계정 연결을 완료하지 못했습니다. 다시 시도해 주세요.",
+        )
+        return _redirect_to_login(next_url)
+
+    login_user(request, user)
+    messages.success(
+        request,
+        f"{user.username}님, 소셜 로그인이 완료되었습니다. 보안을 위해 비밀번호 기반 로그인은 중지합니다.",
+    )
+    return redirect(next_url or "dashboard")
+
+
 def oauth_callback_view(request, provider: str):
     code = request.GET.get("code", "")
     state = request.GET.get("state", "")
@@ -154,16 +242,65 @@ def oauth_callback_view(request, provider: str):
 
     try:
         get_oauth_provider_config(provider)
-        profile, next_url = exchange_oauth_code_for_profile(
+        profile, state_data = exchange_oauth_code_for_profile(
             request,
             provider=provider,
             code=code,
             state=state,
         )
-        user = get_or_create_user_from_oauth_profile(
+        next_url = state_data.get("next_url", "")
+        if state_data.get("action") == OAUTH_ACTION_LINK:
+            try:
+                current_user = get_current_user(request)
+                if current_user is None:
+                    raise OAuthError(
+                        "로그인한 상태에서만 OAuth 계정을 연동할 수 있습니다."
+                    )
+                link_user_id = state_data.get("link_user_id")
+                if str(current_user.id) != link_user_id:
+                    raise OAuthError(
+                        "연동 대상 계정이 변경되었습니다. 다시 시도해 주세요."
+                    )
+                link_oauth_account_to_user(
+                    user=current_user,
+                    provider=provider,
+                    profile=profile,
+                )
+            except OAuthError as exc:
+                messages.error(request, str(exc))
+                return redirect("mypage")
+            messages.success(
+                request,
+                f"{current_user.username} 계정에 {provider.title()} 로그인을 연결했습니다. 보안을 위해 비밀번호 기반 로그인은 중지합니다.",
+            )
+            return redirect(next_url or "mypage")
+        existing_oauth_account = get_existing_oauth_account_for_profile(
             provider=provider,
             profile=profile,
         )
+        existing_user = get_existing_user_for_oauth_email(profile)
+        if (
+            existing_oauth_account is None
+            and existing_user is not None
+            and existing_user.status == UserStatus.ACTIVE
+        ):
+            request.session[PENDING_OAUTH_CONFIRM_SESSION_KEY] = {
+                "provider": provider,
+                "profile": profile,
+                "user_id": str(existing_user.id),
+                "next_url": next_url,
+            }
+            return render(
+                request,
+                "pages/auth/oauth_confirm_existing_account.html",
+                {
+                    "provider": provider,
+                    "provider_label": provider.title(),
+                    "existing_user": existing_user,
+                    "next_url": next_url,
+                },
+            )
+        user = get_or_create_user_from_oauth_profile(provider=provider, profile=profile)
     except OAuthError as exc:
         messages.error(request, str(exc))
         return redirect("login")
@@ -171,18 +308,30 @@ def oauth_callback_view(request, provider: str):
         raise Http404 from exc
 
     login_user(request, user)
-    messages.success(request, f"{user.username}님, 소셜 로그인이 완료되었습니다.")
+    messages.success(
+        request,
+        f"{user.username}님, 소셜 로그인이 완료되었습니다. 보안을 위해 비밀번호 기반 로그인은 중지합니다."
+        if user.oauth_accounts.exists()
+        else f"{user.username}님, 소셜 로그인이 완료되었습니다.",
+    )
     return redirect(next_url or "dashboard")
 
 
 @login_required
 def mypage_view(request):
+    oauth_accounts = list(get_user_oauth_accounts(request.current_user))
     return render(
         request,
         "pages/user/mypage.html",
         {
             "page_heading": "My Page",
             "profile_user": request.current_user,
+            "oauth_accounts": oauth_accounts,
+            "available_oauth_link_providers": get_unlinked_oauth_providers(
+                request,
+                user=request.current_user,
+            ),
+            "password_login_disabled": bool(oauth_accounts),
         },
     )
 
@@ -207,6 +356,12 @@ def profile_edit_view(request):
 
 @login_required
 def password_change_view(request):
+    if request.current_user.oauth_accounts.exists():
+        messages.error(
+            request,
+            "OAuth가 연결된 계정은 비밀번호를 사용할 수 없습니다.",
+        )
+        return redirect("mypage")
     form = PasswordChangeForm(request.POST or None, user=request.current_user)
     if request.method == "POST" and form.is_valid():
         update_user_password(

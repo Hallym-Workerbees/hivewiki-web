@@ -1,0 +1,37 @@
+{% extends "layouts/auth.html" %}
+{% block title %}
+    HiveWiki | 기존 계정 연결 확인
+{% endblock title %}
+{% block auth_content %}
+    <div class="rounded-[2rem] bg-surface-container-low p-8">
+        <div class="text-xs uppercase tracking-[0.24em] text-stone-400">OAuth Confirmation</div>
+        <h1 class="mt-3 font-headline text-4xl font-black tracking-tight">기존 계정에 연결할까요?</h1>
+        <p class="mt-3 text-sm leading-7 text-on-surface-variant">
+            같은 이메일로 이미 가입된 계정을 찾았습니다. {{ provider_label }} 계정을
+            <strong>{{ existing_user.email }}</strong> 계정에 연결합니다. 이메일은 기존 계정 확인용으로만 사용되며,
+            연결 후에도 기존 비밀번호 로그인은 유지됩니다.
+        </p>
+        <div class="mt-8 rounded-[1.5rem] bg-white p-6">
+            <div class="text-xs uppercase tracking-[0.18em] text-stone-400">기존 계정</div>
+            <div class="mt-3 text-lg font-bold text-on-surface">{{ existing_user.username }}</div>
+            <div class="mt-1 text-sm text-on-surface-variant">{{ existing_user.email }}</div>
+        </div>
+        <form method="post"
+              action="{% url 'oauth_confirm_existing_account' %}"
+              class="mt-8 space-y-3">
+            {% csrf_token %}
+            <button type="submit"
+                    name="decision"
+                    value="confirm"
+                    class="w-full rounded-2xl bg-primary-container px-4 py-3 text-sm font-bold text-on-primary-container">
+                기존 계정에 연결하고 계속하기
+            </button>
+            <button type="submit"
+                    name="decision"
+                    value="cancel"
+                    class="w-full rounded-2xl bg-surface-container-high px-4 py-3 text-sm font-semibold text-primary">
+                취소
+            </button>
+        </form>
+    </div>
+{% endblock auth_content %}

@@ -1,0 +1,212 @@
+{% extends "layouts/app.html" %}
+{% block title %}
+    HiveWiki | Ingestion Management
+{% endblock title %}
+{% block app_content %}
+    <section class="mx-auto max-w-7xl space-y-8">
+        {% include "partials/admin/subnav.html" %}
+        <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            {% include "partials/stat_tile.html" with label="소스" value=source_count description="현재 연결된 전체 수집 소스 수" %}
+            {% include "partials/stat_tile.html" with label="Healthy" value=healthy_source_count description="문제 없이 수집 중인 소스 수" %}
+            {% include "partials/stat_tile.html" with label="Paused" value=paused_source_count description="관리자가 의도적으로 중지한 소스 수" %}
+            {% include "partials/stat_tile.html" with label="Warning" value=warning_source_count description="대기 문서나 잡이 쌓인 소스 수" %}
+            {% include "partials/stat_tile.html" with label="Failing" value=failing_source_count description="실패 징후가 있는 소스 수" %}
+        </section>
+        <section class="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+            <div class="space-y-6 rounded-[2rem] bg-surface-container-low p-6 shadow-ambient lg:p-8">
+                {% include "partials/section_header.html" with eyebrow="Crawler Sources" title="소스 등록" description="새 수집 소스를 추가하고 폴링 주기와 다음 시각을 설정합니다." %}
+                <form method="post" class="space-y-5 rounded-[1.75rem] bg-white p-6">
+                    {% csrf_token %}
+                    {% include "partials/form_errors.html" with form=source_form %}
+                    {% for field in source_form %}
+                        {% if field.name == "enabled" %}
+                            <label class="flex items-center gap-3 rounded-2xl bg-surface-container-low px-4 py-3">
+                                {{ field }}
+                                <span>
+                                    <span class="block text-sm font-semibold">{{ field.label }}</span>
+                                    <span class="block text-xs text-stone-500">비활성화하면 크롤러가 이 소스를 건너뜁니다.</span>
+                                </span>
+                            </label>
+                            {% for error in field.errors %}<p class="text-sm text-red-700">{{ error }}</p>{% endfor %}
+                        {% else %}
+                            {% include "partials/auth_field.html" %}
+                        {% endif %}
+                    {% endfor %}
+                    <button type="submit"
+                            class="w-full rounded-2xl bg-primary-container px-4 py-3 text-sm font-bold text-on-primary-container">
+                        소스 추가
+                    </button>
+                </form>
+            </div>
+            <div class="space-y-6 rounded-[2rem] bg-surface-container-low p-6 shadow-ambient lg:p-8">
+                {% include "partials/section_header.html" with eyebrow="Verbose Status" title="소스별 수집 현황" description="소스, 문서, 잡 상태를 한 번에 보고 문제가 생긴 구간을 빠르게 좁힙니다." %}
+                <div class="space-y-3">
+                    {% for source in sources %}
+                        <div class="rounded-[1.5rem] bg-white px-5 py-5 transition hover:-translate-y-0.5 hover:shadow-ambient {{ source.health_panel_class }}">
+                            <div class="flex items-start justify-between gap-4">
+                                <div>
+                                    <div class="font-semibold text-on-surface">{{ source.name }}</div>
+                                    <div class="mt-1 break-all text-xs text-stone-500">{{ source.target_url }}</div>
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <div class="rounded-full px-3 py-1 text-xs font-semibold {{ source.health_badge_class }}">
+                                        {{ source.health_label }}
+                                    </div>
+                                    <div class="rounded-full px-3 py-1 text-xs font-semibold {% if source.enabled %}bg-primary-container text-on-primary-container{% else %}bg-stone-200 text-stone-600{% endif %}">
+                                        {% if source.enabled %}
+                                            활성
+                                        {% else %}
+                                            비활성
+                                        {% endif %}
+                                    </div>
+                                    <button type="button"
+                                            hx-get="{% url 'admin_source_edit_modal' source.id %}"
+                                            hx-target="#admin-modal-root"
+                                            hx-swap="innerHTML"
+                                            class="rounded-2xl bg-surface-container-low px-4 py-2 text-sm font-semibold text-primary">
+                                        수정
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="mt-4 grid gap-3 text-sm text-on-surface-variant sm:grid-cols-3 xl:grid-cols-5">
+                                <div>
+                                    <div class="text-xs uppercase tracking-[0.18em] text-stone-400">주기</div>
+                                    <div class="mt-1 font-semibold text-on-surface">{{ source.poll_interval_minutes }}분</div>
+                                </div>
+                                <div>
+                                    <div class="text-xs uppercase tracking-[0.18em] text-stone-400">다음 수집</div>
+                                    <div class="mt-1 font-semibold text-on-surface timezone-sensitive"
+                                         data-local-datetime="{{ source.next_poll_at|date:'c' }}"
+                                         data-local-format="datetime">{{ source.next_poll_at|date:"Y-m-d H:i" }}</div>
+                                </div>
+                                <div>
+                                    <div class="text-xs uppercase tracking-[0.18em] text-stone-400">문서</div>
+                                    <div class="mt-1 font-semibold text-on-surface">{{ source.document_count }}</div>
+                                </div>
+                                <div>
+                                    <div class="text-xs uppercase tracking-[0.18em] text-stone-400">대기 문서</div>
+                                    <div class="mt-1 font-semibold {% if source.pending_document_count > 0 %}text-primary{% else %}text-on-surface{% endif %}">
+                                        {{ source.pending_document_count }}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="text-xs uppercase tracking-[0.18em] text-stone-400">실패 문서/잡</div>
+                                    <div class="mt-1 font-semibold {% if source.failed_document_count > 0 or source.failed_job_count > 0 %}text-error{% else %}text-on-surface{% endif %}">
+                                        {{ source.failed_document_count }} / {{ source.failed_job_count }}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mt-4 grid gap-3 text-sm text-on-surface-variant sm:grid-cols-3">
+                                <div>
+                                    <div class="text-xs uppercase tracking-[0.18em] text-stone-400">연속 실패</div>
+                                    <div class="mt-1 font-semibold {% if source.consecutive_failures > 0 %}text-error{% else %}text-on-surface{% endif %}">
+                                        {{ source.consecutive_failures }}회
+                                    </div>
+                                </div>
+                                <div>
+                                    <div class="text-xs uppercase tracking-[0.18em] text-stone-400">대기 잡</div>
+                                    <div class="mt-1 font-semibold text-on-surface">{{ source.queued_job_count }}</div>
+                                </div>
+                                <div>
+                                    <div class="text-xs uppercase tracking-[0.18em] text-stone-400">최근 성공</div>
+                                    <div class="mt-1 font-semibold text-on-surface">
+                                        {% if source.last_success_at %}
+                                            <span class="timezone-sensitive"
+                                                  data-local-datetime="{{ source.last_success_at|date:'c' }}"
+                                                  data-local-format="datetime">{{ source.last_success_at|date:"Y-m-d H:i" }}</span>
+                                        {% else %}
+                                            없음
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                            {% if source.last_error_message %}
+                                <div class="mt-4 rounded-2xl bg-error-container px-4 py-3 text-sm text-on-error-container">
+                                    {{ source.last_error_message }}
+                                </div>
+                            {% endif %}
+                        </div>
+                    {% empty %}
+                        <div class="rounded-[1.5rem] bg-white px-5 py-8 text-sm text-on-surface-variant">등록된 수집 소스가 없습니다.</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </section>
+        <section class="grid gap-6 xl:grid-cols-2">
+            <div class="space-y-5 rounded-[2rem] bg-surface-container-low p-6 shadow-ambient lg:p-8">
+                {% include "partials/section_header.html" with eyebrow="Recent Documents" title="최근 수집 문서" description="어떤 소스에서 문서가 들어왔는지와 fetch/wiki 상태를 같이 봅니다." %}
+                <div class="space-y-3">
+                    {% for document in recent_documents %}
+                        <article class="rounded-[1.5rem] bg-white px-5 py-5">
+                            <div class="flex items-start justify-between gap-4">
+                                <div>
+                                    <div class="font-semibold text-on-surface">{{ document.title }}</div>
+                                    <div class="mt-1 text-xs text-stone-500">{{ document.source.name }}</div>
+                                </div>
+                                <div class="text-right text-xs text-stone-500 timezone-sensitive"
+                                     data-local-datetime="{{ document.collected_at|date:'c' }}"
+                                     data-local-format="datetime">{{ document.collected_at|date:"Y-m-d H:i" }}</div>
+                            </div>
+                            <div class="mt-4 flex flex-wrap gap-2">
+                                <span class="rounded-full bg-surface-container-low px-3 py-1 text-xs font-semibold text-on-surface-variant">fetch {{ document.fetch_status }}</span>
+                                <span class="rounded-full bg-surface-container-low px-3 py-1 text-xs font-semibold text-on-surface-variant">wiki {{ document.wiki_status }}</span>
+                            </div>
+                        </article>
+                    {% empty %}
+                        <div class="rounded-[1.5rem] bg-white px-5 py-8 text-sm text-on-surface-variant">수집된 문서가 없습니다.</div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="space-y-5 rounded-[2rem] bg-surface-container-low p-6 shadow-ambient lg:p-8">
+                {% include "partials/section_header.html" with eyebrow="Recent Jobs" title="최근 ingestion job" description="큐에 들어간 작업과 실패 메시지를 빠르게 확인합니다." %}
+                <div class="space-y-3">
+                    {% for job in recent_jobs %}
+                        <article class="rounded-[1.5rem] bg-white px-5 py-5">
+                            <div class="flex items-start justify-between gap-4">
+                                <div>
+                                    <div class="font-semibold text-on-surface">{{ job.source_document.title }}</div>
+                                    <div class="mt-1 text-xs text-stone-500">{{ job.source_document.source.name }}</div>
+                                </div>
+                                <div class="rounded-full px-3 py-1 text-xs font-semibold {% if job.status == 'FAILED' %}bg-error-container text-on-error-container{% elif job.status == 'COMPLETED' %}bg-secondary-container text-on-secondary-container{% else %}bg-surface-container-low text-on-surface-variant{% endif %}">
+                                    {{ job.status }}
+                                </div>
+                            </div>
+                            <div class="mt-4 grid gap-3 text-sm text-on-surface-variant sm:grid-cols-3">
+                                <div>
+                                    <div class="text-xs uppercase tracking-[0.18em] text-stone-400">Queued</div>
+                                    <div class="mt-1 font-semibold text-on-surface timezone-sensitive"
+                                         data-local-datetime="{{ job.queued_at|date:'c' }}"
+                                         data-local-format="datetime">{{ job.queued_at|date:"Y-m-d H:i" }}</div>
+                                </div>
+                                <div>
+                                    <div class="text-xs uppercase tracking-[0.18em] text-stone-400">Retry</div>
+                                    <div class="mt-1 font-semibold text-on-surface">{{ job.retry_count }}</div>
+                                </div>
+                                <div>
+                                    <div class="text-xs uppercase tracking-[0.18em] text-stone-400">Completed</div>
+                                    <div class="mt-1 font-semibold text-on-surface">
+                                        {% if job.completed_at %}
+                                            <span class="timezone-sensitive"
+                                                  data-local-datetime="{{ job.completed_at|date:'c' }}"
+                                                  data-local-format="datetime">{{ job.completed_at|date:"Y-m-d H:i" }}</span>
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                            {% if job.error_message %}
+                                <div class="mt-4 rounded-2xl bg-error-container px-4 py-3 text-sm text-on-error-container">
+                                    {{ job.error_message }}
+                                </div>
+                            {% endif %}
+                        </article>
+                    {% empty %}
+                        <div class="rounded-[1.5rem] bg-white px-5 py-8 text-sm text-on-surface-variant">생성된 ingestion job이 없습니다.</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </section>
+        <div id="admin-modal-root"></div>
+    </section>
+{% endblock app_content %}

@@ -20,8 +20,10 @@
                 <div class="mt-8 flex flex-wrap gap-3">
                     <a href="{% url 'profile_edit' %}"
                        class="inline-flex rounded-2xl bg-primary-container px-5 py-3 text-sm font-bold text-on-primary-container">프로필 수정</a>
-                    <a href="{% url 'password_change' %}"
-                       class="inline-flex rounded-2xl bg-surface-container-high px-5 py-3 text-sm font-semibold text-primary">비밀번호 변경</a>
+                    {% if not password_login_disabled %}
+                        <a href="{% url 'password_change' %}"
+                           class="inline-flex rounded-2xl bg-surface-container-high px-5 py-3 text-sm font-semibold text-primary">비밀번호 변경</a>
+                    {% endif %}
                 </div>
             </section>
             <section class="grid gap-4">
@@ -30,6 +32,60 @@
                 {% include "partials/stat_tile.html" with label="최근 변경" value=profile_user.updated_at|date:"Y.m.d H:i" value_datetime=profile_user.updated_at value_format="datetime" value_class="timezone-sensitive" description="프로필이 마지막으로 수정된 시각입니다." %}
             </section>
         </div>
+        <section class="rounded-[2rem] bg-surface-container-low p-8">
+            <div class="text-xs uppercase tracking-[0.24em] text-stone-400">Login Methods</div>
+            <h2 class="mt-2 font-headline text-3xl font-black tracking-tight">로그인 방식</h2>
+            {% if password_login_disabled %}
+                <p class="mt-4 text-sm leading-7 text-on-surface-variant">이 계정은 현재 비밀번호가 설정되어 있지 않아 OAuth 로그인만 사용할 수 있습니다.</p>
+            {% else %}
+                <p class="mt-4 text-sm leading-7 text-on-surface-variant">현재는 이메일/비밀번호 로그인과 OAuth 로그인을 함께 사용할 수 있습니다.</p>
+            {% endif %}
+            <div class="mt-6 grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+                <div class="rounded-[1.75rem] bg-white p-6">
+                    <div class="text-xs uppercase tracking-[0.18em] text-stone-400">연결된 OAuth</div>
+                    {% if oauth_accounts %}
+                        <div class="mt-4 space-y-3">
+                            {% for account in oauth_accounts %}
+                                <div class="rounded-2xl bg-surface-container-low px-4 py-4">
+                                    <div class="flex items-center justify-between gap-4">
+                                        <div class="font-semibold text-on-surface">{{ account.get_provider_display }}</div>
+                                        <span class="rounded-full bg-secondary-container px-3 py-1 text-xs font-semibold text-on-secondary-container">{{ account.provider|upper }}</span>
+                                    </div>
+                                    {% if account.last_login_at %}
+                                        <div class="mt-2 text-xs text-on-surface-variant timezone-sensitive"
+                                             data-local-datetime="{{ account.last_login_at|date:'c' }}"
+                                             data-local-format="datetime">
+                                            {{ account.last_login_at|date:"Y.m.d H:i" }}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="mt-4 text-sm text-on-surface-variant">아직 연결된 OAuth 계정이 없습니다.</p>
+                    {% endif %}
+                </div>
+                <div class="rounded-[1.75rem] bg-white p-6">
+                    <div class="text-xs uppercase tracking-[0.18em] text-stone-400">OAuth 연결</div>
+                    <p class="mt-3 text-sm leading-7 text-on-surface-variant">
+                        현재 계정 이메일과 같은 OAuth 계정만 연결할 수 있습니다. 연결 후에도 기존 비밀번호 로그인은 유지됩니다.
+                    </p>
+                    {% if available_oauth_link_providers %}
+                        <div class="mt-5 grid gap-3">
+                            {% for oauth_provider in available_oauth_link_providers %}
+                                <a href="{{ oauth_provider.start_url }}"
+                                   class="flex items-center justify-between rounded-[1.4rem] border border-stone-200/90 bg-surface-container-low px-4 py-3.5 text-sm font-semibold text-on-surface transition hover:-translate-y-0.5 hover:border-stone-300 hover:bg-stone-50">
+                                    <span>{{ oauth_provider.label }} 연결</span>
+                                    <span class="text-stone-400">{{ profile_user.email }}</span>
+                                </a>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="mt-4 text-sm text-on-surface-variant">연결 가능한 OAuth provider가 더 이상 없습니다.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
         <section class="rounded-[2rem] bg-surface-container-lowest p-8 ambient-shadow">
             <div class="text-xs uppercase tracking-[0.24em] text-stone-400">Profile Image</div>
             <h2 class="mt-2 font-headline text-3xl font-black tracking-tight">프로필 이미지</h2>

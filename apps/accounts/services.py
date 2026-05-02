@@ -5,12 +5,16 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from importlib import import_module
 from json import loads
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
+from django.core import signing
 from django.core.cache import cache
+from django.core.signing import BadSignature, SignatureExpired
+from django.db import IntegrityError, transaction
 from django.urls import reverse
 from django.utils import timezone
 
@@ -19,6 +23,12 @@ from .models import HiveUser, OAuthAccount, OAuthProvider, UserStatus
 SESSION_USER_ID_KEY = "hivewiki_user_id"
 OAUTH_STATE_SESSION_KEY = "oauth_state"
 TIMEZONE_SESSION_KEY = "django_timezone"
+PENDING_OAUTH_CONFIRM_SESSION_KEY = "pending_oauth_confirm"
+OAUTH_ACTION_LOGIN = "login"
+OAUTH_ACTION_LINK = "link"
+USER_SESSION_KEYS_PREFIX = "user_session_keys"
+PENDING_OAUTH_CONFIRM_SALT = "accounts.pending_oauth_confirm"
+PENDING_OAUTH_CONFIRM_MAX_AGE_SECONDS = 600
 
 
 @dataclass(frozen=True)
@@ -34,6 +44,10 @@ class OAuthProviderConfig:
 
 class OAuthError(Exception):
     pass
+
+
+def inactive_account_message() -> str:
+    return "이 계정은 비활성화되어 로그인할 수 없습니다. 관리자에게 문의해 주세요."
 
 
 def _normalize_identifier(value: str) -> str:
@@ -134,6 +148,87 @@ def authenticate_user(*, email: str, password: str) -> HiveUser | None:
     return user
 
 
+def get_active_user_by_email(email: str) -> HiveUser | None:
+    return (
+        HiveUser.objects.filter(email__iexact=email, status=UserStatus.ACTIVE)
+        .only("id", "username", "email", "password_hash", "status")
+        .first()
+    )
+
+
+def get_user_by_email(email: str) -> HiveUser | None:
+    return (
+        HiveUser.objects.filter(email__iexact=email)
+        .only("id", "username", "email", "password_hash", "status")
+        .first()
+    )
+
+
+def get_user_oauth_accounts(user: HiveUser):
+    return user.oauth_accounts.order_by("provider", "-last_login_at")
+
+
+def get_unlinked_oauth_providers(request, *, user: HiveUser) -> list[dict[str, str]]:
+    linked_providers = set(user.oauth_accounts.values_list("provider", flat=True))
+    providers = []
+    for provider_info in get_available_oauth_providers(
+        request,
+        route_name="oauth_link_start",
+    ):
+        if provider_info["provider"] in linked_providers:
+            continue
+        providers.append(provider_info)
+    return providers
+
+
+def get_existing_oauth_account_for_profile(
+    *, provider: str, profile: dict
+) -> OAuthAccount | None:
+    return (
+        OAuthAccount.objects.select_related("user")
+        .filter(
+            provider=provider,
+            provider_user_id=profile["provider_user_id"],
+        )
+        .first()
+    )
+
+
+def get_existing_user_for_oauth_email(profile: dict) -> HiveUser | None:
+    return HiveUser.objects.filter(email__iexact=profile["email"]).first()
+
+
+def build_pending_oauth_confirmation(
+    *, provider: str, profile: dict, user_id, next_url: str
+) -> str:
+    return signing.dumps(
+        {
+            "provider": provider,
+            "profile": profile,
+            "user_id": str(user_id),
+            "next_url": next_url,
+        },
+        salt=PENDING_OAUTH_CONFIRM_SALT,
+    )
+
+
+def read_pending_oauth_confirmation(signed_value: str) -> dict:
+    try:
+        return signing.loads(
+            signed_value,
+            salt=PENDING_OAUTH_CONFIRM_SALT,
+            max_age=PENDING_OAUTH_CONFIRM_MAX_AGE_SECONDS,
+        )
+    except SignatureExpired as exc:
+        raise OAuthError(
+            "OAuth 계정 연결 확인 시간이 만료되었습니다. 다시 시도해 주세요."
+        ) from exc
+    except BadSignature as exc:
+        raise OAuthError(
+            "OAuth 계정 연결 확인 정보가 올바르지 않습니다. 다시 시도해 주세요."
+        ) from exc
+
+
 def _reset_session_preserving(request, *keys: str) -> None:
     preserved_values = {
         key: request.session.get(key)
@@ -145,13 +240,76 @@ def _reset_session_preserving(request, *keys: str) -> None:
         request.session[key] = value
 
 
+def _user_session_index_cache_key(user_id) -> str:
+    return f"{USER_SESSION_KEYS_PREFIX}:{user_id}"
+
+
+def _get_session_store_class():
+    engine = import_module(settings.SESSION_ENGINE)
+    return engine.SessionStore
+
+
+def _get_tracked_session_keys(*, user: HiveUser) -> set[str]:
+    return {
+        session_key
+        for session_key in cache.get(_user_session_index_cache_key(user.id), [])
+        if session_key
+    }
+
+
+def _store_tracked_session_keys(*, user: HiveUser, session_keys: set[str]) -> None:
+    if not session_keys:
+        cache.delete(_user_session_index_cache_key(user.id))
+        return
+    cache.set(
+        _user_session_index_cache_key(user.id),
+        sorted(session_keys),
+        timeout=settings.SESSION_COOKIE_AGE,
+    )
+
+
+def register_user_session(*, request, user: HiveUser) -> None:
+    session_key = request.session.session_key
+    if not session_key:
+        return
+    session_keys = _get_tracked_session_keys(user=user)
+    session_keys.add(session_key)
+    _store_tracked_session_keys(user=user, session_keys=session_keys)
+
+
+def unregister_user_session(*, request, user: HiveUser | None) -> None:
+    session_key = request.session.session_key
+    if user is None or not session_key:
+        return
+    session_keys = _get_tracked_session_keys(user=user)
+    if session_key not in session_keys:
+        return
+    session_keys.remove(session_key)
+    _store_tracked_session_keys(user=user, session_keys=session_keys)
+
+
+def purge_user_sessions(*, user: HiveUser) -> None:
+    session_keys = _get_tracked_session_keys(user=user)
+    if not session_keys:
+        return
+    session_store_class = _get_session_store_class()
+    for session_key in session_keys:
+        session_store = session_store_class(session_key=session_key)
+        if not session_store.exists(session_key):
+            continue
+        session_store.delete()
+    cache.delete(_user_session_index_cache_key(user.id))
+
+
 def login_user(request, user: HiveUser) -> None:
     _reset_session_preserving(request, TIMEZONE_SESSION_KEY)
     request.session[SESSION_USER_ID_KEY] = str(user.id)
     request.session.cycle_key()
+    register_user_session(request=request, user=user)
 
 
 def logout_user(request) -> None:
+    unregister_user_session(request=request, user=get_current_user(request))
     _reset_session_preserving(request, TIMEZONE_SESSION_KEY)
 
 
@@ -218,13 +376,13 @@ def _oauth_provider_configs() -> dict[str, OAuthProviderConfig]:
 
 
 def get_available_oauth_providers(
-    request, *, next_url: str = ""
+    request, *, next_url: str = "", route_name: str = "oauth_start"
 ) -> list[dict[str, str]]:
     providers = []
     for provider, config in _oauth_provider_configs().items():
         if not config.client_id or not config.client_secret:
             continue
-        start_url = reverse("oauth_start", kwargs={"provider": provider})
+        start_url = reverse(route_name, kwargs={"provider": provider})
         if next_url:
             start_url = f"{start_url}?{urllib.parse.urlencode({'next': next_url})}"
         providers.append(
@@ -253,13 +411,22 @@ def _oauth_callback_url(request, provider: str) -> str:
     return request.build_absolute_uri(path)
 
 
-def begin_oauth_flow(request, *, provider: str, next_url: str = "") -> str:
+def begin_oauth_flow(
+    request,
+    *,
+    provider: str,
+    next_url: str = "",
+    action: str = OAUTH_ACTION_LOGIN,
+    link_user: HiveUser | None = None,
+) -> str:
     config = get_oauth_provider_config(provider)
     state = secrets.token_urlsafe(32)
     request.session[OAUTH_STATE_SESSION_KEY] = {
         "provider": provider,
         "state": state,
         "next_url": next_url,
+        "action": action,
+        "link_user_id": str(link_user.id) if link_user is not None else "",
     }
     params = {
         "client_id": config.client_id,
@@ -316,7 +483,7 @@ def _github_primary_email(access_token: str) -> str | None:
 
 def exchange_oauth_code_for_profile(
     request, *, provider: str, code: str, state: str
-) -> tuple[dict, str]:
+) -> tuple[dict, dict]:
     session_state = request.session.get(OAUTH_STATE_SESSION_KEY) or {}
     if session_state.get("provider") != provider or session_state.get("state") != state:
         raise OAuthError("OAuth state 검증에 실패했습니다. 다시 시도해 주세요.")
@@ -387,7 +554,7 @@ def exchange_oauth_code_for_profile(
         raise OAuthError("OAuth 사용자 정보를 가져오지 못했습니다.") from exc
 
     request.session.pop(OAUTH_STATE_SESSION_KEY, None)
-    return oauth_profile, session_state.get("next_url", "")
+    return oauth_profile, session_state
 
 
 def _build_unique_username(base_value: str) -> str:
@@ -409,37 +576,102 @@ def get_or_create_user_from_oauth_profile(*, provider: str, profile: dict) -> Hi
     email = profile["email"]
     provider_email = profile.get("provider_email")
 
-    oauth_account = (
-        OAuthAccount.objects.select_related("user")
-        .filter(provider=provider, provider_user_id=provider_user_id)
-        .first()
-    )
-    if oauth_account:
-        if oauth_account.user.status != UserStatus.ACTIVE:
-            raise OAuthError("현재 계정 상태로는 소셜 로그인을 사용할 수 없습니다.")
-        oauth_account.provider_email = provider_email
-        oauth_account.last_login_at = timezone.now()
-        oauth_account.save(update_fields=["provider_email", "last_login_at"])
-        return oauth_account.user
+    try:
+        with transaction.atomic():
+            oauth_account = (
+                OAuthAccount.objects.select_related("user")
+                .select_for_update()
+                .filter(provider=provider, provider_user_id=provider_user_id)
+                .first()
+            )
+            if oauth_account:
+                if oauth_account.user.status != UserStatus.ACTIVE:
+                    raise OAuthError(inactive_account_message())
+                oauth_account.provider_email = provider_email
+                oauth_account.last_login_at = timezone.now()
+                oauth_account.save(update_fields=["provider_email", "last_login_at"])
+                return oauth_account.user
 
-    user = HiveUser.objects.filter(email__iexact=email).first()
-    if user is not None and user.status != UserStatus.ACTIVE:
-        raise OAuthError("현재 계정 상태로는 소셜 로그인을 사용할 수 없습니다.")
-    if user is None:
-        user = HiveUser.objects.create(
-            username=_build_unique_username(
-                profile.get("username_hint", email.split("@")[0])
-            ),
-            email=email,
-            password_hash=None,
-            status=UserStatus.ACTIVE,
-        )
+            user = (
+                HiveUser.objects.select_for_update().filter(email__iexact=email).first()
+            )
+            if user is not None and user.status != UserStatus.ACTIVE:
+                raise OAuthError(inactive_account_message())
+            if user is not None:
+                raise OAuthError(
+                    "같은 이메일의 기존 계정을 확인했습니다. 계정 연결 확인을 다시 진행해 주세요."
+                )
+            if user is None:
+                user = HiveUser.objects.create(
+                    username=_build_unique_username(
+                        profile.get("username_hint", email.split("@")[0])
+                    ),
+                    email=email,
+                    password_hash=None,
+                    status=UserStatus.ACTIVE,
+                )
 
-    OAuthAccount.objects.create(
-        user=user,
-        provider=provider,
-        provider_user_id=provider_user_id,
-        provider_email=provider_email,
-        last_login_at=timezone.now(),
-    )
-    return user
+            OAuthAccount.objects.create(
+                user=user,
+                provider=provider,
+                provider_user_id=provider_user_id,
+                provider_email=provider_email,
+                last_login_at=timezone.now(),
+            )
+            return user
+    except IntegrityError as exc:
+        raise OAuthError(
+            "OAuth 계정 연결을 완료하지 못했습니다. 다시 시도해 주세요."
+        ) from exc
+
+
+def link_oauth_account_to_user(
+    *, user: HiveUser, provider: str, profile: dict
+) -> OAuthAccount:
+    try:
+        with transaction.atomic():
+            locked_user = HiveUser.objects.select_for_update().get(pk=user.pk)
+            if locked_user.status != UserStatus.ACTIVE:
+                raise OAuthError(inactive_account_message())
+
+            email = profile["email"].strip().lower()
+            provider_user_id = profile["provider_user_id"]
+            provider_email = profile.get("provider_email")
+
+            if locked_user.email.strip().lower() != email:
+                raise OAuthError(
+                    "현재 계정 이메일과 같은 OAuth 계정만 연동할 수 있습니다."
+                )
+
+            existing_account = (
+                OAuthAccount.objects.select_related("user")
+                .select_for_update()
+                .filter(provider=provider, provider_user_id=provider_user_id)
+                .first()
+            )
+            if existing_account and existing_account.user_id != locked_user.id:
+                raise OAuthError("이미 다른 계정에 연결된 OAuth 계정입니다.")
+            if existing_account and existing_account.user_id == locked_user.id:
+                existing_account.provider_email = provider_email
+                existing_account.last_login_at = timezone.now()
+                existing_account.save(update_fields=["provider_email", "last_login_at"])
+                return existing_account
+
+            existing_provider_link = locked_user.oauth_accounts.filter(
+                provider=provider
+            ).first()
+            if existing_provider_link:
+                raise OAuthError("이미 같은 provider가 현재 계정에 연결되어 있습니다.")
+
+            oauth_account = OAuthAccount.objects.create(
+                user=locked_user,
+                provider=provider,
+                provider_user_id=provider_user_id,
+                provider_email=provider_email,
+                last_login_at=timezone.now(),
+            )
+            return oauth_account
+    except IntegrityError as exc:
+        raise OAuthError(
+            "OAuth 계정 연결을 완료하지 못했습니다. 다시 시도해 주세요."
+        ) from exc

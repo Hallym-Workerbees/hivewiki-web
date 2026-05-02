@@ -6,8 +6,18 @@ urlpatterns = [
     path("auth/login/", views.login_view, name="login"),
     path("auth/signup/", views.signup_view, name="signup"),
     path("auth/logout/", views.logout_view, name="logout"),
+    path(
+        "auth/oauth/confirm-existing/",
+        views.oauth_confirm_existing_account_view,
+        name="oauth_confirm_existing_account",
+    ),
     path("auth/timezone/", views.set_timezone_view, name="set_timezone"),
     path("auth/oauth/<str:provider>/", views.oauth_start_view, name="oauth_start"),
+    path(
+        "me/oauth/<str:provider>/link/",
+        views.oauth_link_start_view,
+        name="oauth_link_start",
+    ),
     path(
         "auth/oauth/<str:provider>/callback/",
         views.oauth_callback_view,

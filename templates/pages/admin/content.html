@@ -1,0 +1,29 @@
+{% extends "layouts/app.html" %}
+{% block title %}
+    HiveWiki | Content Management
+{% endblock title %}
+{% block app_content %}
+    <section class="mx-auto max-w-7xl space-y-8">
+        {% include "partials/admin/subnav.html" %}
+        <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {% include "partials/stat_tile.html" with label="유저" value=user_count description="콘텐츠 운영과 연결된 전체 사용자 수" %}
+            {% include "partials/stat_tile.html" with label="태그" value=tag_count description="콘텐츠 분류에 연결된 태그 수" %}
+            {% include "partials/stat_tile.html" with label="문서" value=document_count description="현재 연결된 수집 문서 수" %}
+            {% include "partials/stat_tile.html" with label="준비 상태" value="Pending" description="삭제/숨김 워크플로우 연결 전" %}
+        </section>
+        <section class="grid gap-6 lg:grid-cols-2">
+            <article class="rounded-[2rem] bg-surface-container-low p-6 shadow-ambient lg:p-8">
+                {% include "partials/section_header.html" with eyebrow="Community" title="게시글 관리 예정" description="커뮤니티 게시글 삭제, 숨김, 복구 기능을 이 탭에 연결할 예정입니다." %}
+                <div class="mt-6 rounded-[1.5rem] bg-white px-5 py-8 text-sm leading-7 text-on-surface-variant">
+                    현재 저장소에는 실제 커뮤니티 게시글 모델이 아직 연결되어 있지 않습니다. 게시글 모델이 들어오면 이 탭에서 삭제, 숨김, 신고 대응 같은 운영 액션을 붙이는 것이 자연스럽습니다.
+                </div>
+            </article>
+            <article class="rounded-[2rem] bg-surface-container-low p-6 shadow-ambient lg:p-8">
+                {% include "partials/section_header.html" with eyebrow="Wiki" title="위키 관리 예정" description="위키 문서 삭제, 보존, 승격/회수 기능을 이 탭에서 다루게 됩니다." %}
+                <div class="mt-6 rounded-[1.5rem] bg-white px-5 py-8 text-sm leading-7 text-on-surface-variant">
+                    위키도 현재는 탐색용 UI만 있고 독립 모델 기반의 관리 기능은 아직 없습니다. 문서 모델이 연결되면 삭제, 아카이브, 보호 상태 전환 같은 운영 도구를 여기에 배치하면 됩니다.
+                </div>
+            </article>
+        </section>
+    </section>
+{% endblock app_content %}

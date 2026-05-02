@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.utils import timezone
 
-from .services import TIMEZONE_SESSION_KEY, get_current_user
+from .services import TIMEZONE_SESSION_KEY, get_current_user, register_user_session
 
 
 class TimezoneMiddleware:
@@ -23,4 +23,6 @@ class CurrentUserMiddleware:
 
     def __call__(self, request):
         request.current_user = get_current_user(request)
+        if request.current_user is not None:
+            register_user_session(request=request, user=request.current_user)
         return self.get_response(request)

@@ -9,13 +9,13 @@
             {% include "partials/stat_tile.html" with label="전체 유저" value=user_count description="현재 등록된 전체 사용자 수" %}
             {% include "partials/stat_tile.html" with label="활성" value=active_user_count description="정상 사용 가능한 계정 수" %}
             {% include "partials/stat_tile.html" with label="관리자" value=admin_user_count description="운영 권한을 가진 계정 수" %}
-            {% include "partials/stat_tile.html" with label="OAuth 연동" value=oauth_connected_user_count description="소셜 로그인 계정이 연결된 사용자 수" %}
+            {% include "partials/stat_tile.html" with label="제거됨" value=deleted_user_count description="운영 기록만 남아 있는 제거된 계정 수" %}
         </section>
         <section class="space-y-5 rounded-[2rem] bg-surface-container-low p-6 shadow-ambient lg:p-8">
-            {% include "partials/section_header.html" with eyebrow="Users" title="유저 목록" description="가입 상태와 권한을 기준으로 계정을 검토합니다." %}
+            {% include "partials/section_header.html" with eyebrow="Users" title="유저 목록" description="활성 및 비활성 계정을 검토하고 운영 액션을 수행합니다." %}
             <div class="space-y-3">
                 {% for user in users %}
-                    <article class="grid gap-4 rounded-[1.5rem] bg-white px-5 py-5 transition hover:-translate-y-0.5 hover:shadow-ambient lg:grid-cols-[1.3fr_1fr_0.9fr_0.9fr_1.2fr]">
+                    <article class="grid gap-4 rounded-[1.5rem] bg-white px-5 py-5 transition hover:-translate-y-0.5 hover:shadow-ambient lg:grid-cols-[1.15fr_0.9fr_0.8fr_0.8fr_1fr_1.2fr]">
                         <div>
                             <div class="font-semibold text-on-surface">{{ user.username }}</div>
                             <div class="mt-1 text-sm text-on-surface-variant">{{ user.email }}</div>
@@ -59,11 +59,94 @@
                                 {% endif %}
                             {% endwith %}
                         </div>
+                        <div>
+                            <div class="text-xs uppercase tracking-[0.18em] text-stone-400">액션</div>
+                            <div class="mt-2 flex flex-wrap gap-2">
+                                {% if user.role == "admin" %}
+                                    <form method="post" action="{% url 'admin_user_action' user.id %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="demote_admin">
+                                        <button type="submit"
+                                                class="rounded-2xl bg-surface-container-low px-3 py-2 text-xs font-semibold text-on-surface-variant"
+                                                {% if request.current_user.id == user.id %}disabled{% endif %}>
+                                            관리자 해제
+                                        </button>
+                                    </form>
+                                {% else %}
+                                    <form method="post" action="{% url 'admin_user_action' user.id %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="promote_admin">
+                                        <button type="submit"
+                                                class="rounded-2xl bg-secondary-container px-3 py-2 text-xs font-semibold text-on-secondary-container">
+                                            관리자 승격
+                                        </button>
+                                    </form>
+                                {% endif %}
+                                {% if user.status == "active" %}
+                                    <form method="post" action="{% url 'admin_user_action' user.id %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="suspend">
+                                        <button type="submit"
+                                                class="rounded-2xl bg-surface-container-low px-3 py-2 text-xs font-semibold text-on-surface-variant"
+                                                {% if request.current_user.id == user.id %}disabled{% endif %}>
+                                            비활성화
+                                        </button>
+                                    </form>
+                                {% elif user.status == "suspended" %}
+                                    <form method="post" action="{% url 'admin_user_action' user.id %}">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="activate">
+                                        <button type="submit"
+                                                class="rounded-2xl bg-primary-container px-3 py-2 text-xs font-semibold text-on-primary-container">
+                                            재활성화
+                                        </button>
+                                    </form>
+                                {% endif %}
+                                <form method="post" action="{% url 'admin_user_action' user.id %}">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="delete">
+                                    <button type="submit"
+                                            class="rounded-2xl bg-error-container px-3 py-2 text-xs font-semibold text-on-error-container"
+                                            {% if request.current_user.id == user.id or user.status == "deleted" %}disabled{% endif %}>
+                                        사용자 제거
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
                     </article>
                 {% empty %}
                     <div class="rounded-[1.5rem] bg-white px-5 py-8 text-sm text-on-surface-variant">등록된 사용자가 없습니다.</div>
                 {% endfor %}
             </div>
         </section>
+        {% if deleted_users %}
+            <section class="space-y-5 rounded-[2rem] bg-surface-container-low p-6 shadow-ambient lg:p-8">
+                {% include "partials/section_header.html" with eyebrow="Removed" title="삭제된 계정" description="식별자는 정리되었고 운영 기록만 남아 있는 계정입니다." %}
+                <div class="space-y-3">
+                    {% for user in deleted_users %}
+                        <article class="grid gap-4 rounded-[1.5rem] bg-white px-5 py-5 lg:grid-cols-[1.2fr_0.9fr_0.8fr_1fr]">
+                            <div>
+                                <div class="font-semibold text-on-surface">{{ user.username }}</div>
+                                <div class="mt-1 text-sm text-on-surface-variant">{{ user.email }}</div>
+                            </div>
+                            <div>
+                                <div class="text-xs uppercase tracking-[0.18em] text-stone-400">가입일</div>
+                                <div class="mt-1 text-sm font-semibold text-on-surface timezone-sensitive"
+                                     data-local-datetime="{{ user.created_at|date:'c' }}"
+                                     data-local-format="datetime">{{ user.created_at|date:"Y.m.d H:i" }}</div>
+                            </div>
+                            <div>
+                                <div class="text-xs uppercase tracking-[0.18em] text-stone-400">상태</div>
+                                <div class="mt-1 text-sm font-semibold text-on-surface">{{ user.get_status_display }}</div>
+                            </div>
+                            <div>
+                                <div class="text-xs uppercase tracking-[0.18em] text-stone-400">권한</div>
+                                <div class="mt-1 text-sm font-semibold text-on-surface">{{ user.get_role_display }}</div>
+                            </div>
+                        </article>
+                    {% endfor %}
+                </div>
+            </section>
+        {% endif %}
     </section>
 {% endblock app_content %}

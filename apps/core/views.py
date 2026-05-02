@@ -1,14 +1,21 @@
+import logging
+
 from django.contrib import messages
+from django.db import transaction
 from django.db.models import Count, Prefetch, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.views.decorators.http import require_POST
 
 from apps.accounts.decorators import admin_required, login_required
 from apps.accounts.models import HiveUser, OAuthAccount, UserRole, UserStatus
+from apps.accounts.services import purge_user_sessions
 
 from .forms import SourceForm, TagForm
 from .models import IngestionJob, Source, SourceDocument, Tag
+
+logger = logging.getLogger(__name__)
 
 LIST_TAGS = ["지식", "협업", "캠퍼스"]
 
@@ -142,7 +149,7 @@ def admin_console(request):
 @login_required
 @admin_required
 def admin_user_management(request):
-    users = list(
+    all_users = list(
         HiveUser.objects.prefetch_related(
             Prefetch(
                 "oauth_accounts",
@@ -150,6 +157,8 @@ def admin_user_management(request):
             )
         ).order_by("-created_at")
     )
+    users = [user for user in all_users if user.status != UserStatus.DELETED]
+    deleted_users = [user for user in all_users if user.status == UserStatus.DELETED]
     return render(
         request,
         "pages/admin/users.html",
@@ -158,6 +167,7 @@ def admin_user_management(request):
             "page_heading": "User Management",
             "admin_section": "users",
             "users": users,
+            "deleted_users": deleted_users,
             "admin_user_count": sum(1 for user in users if user.role == UserRole.ADMIN),
             "active_user_count": sum(
                 1 for user in users if user.status == UserStatus.ACTIVE
@@ -168,8 +178,30 @@ def admin_user_management(request):
             "suspended_user_count": sum(
                 1 for user in users if user.status == UserStatus.SUSPENDED
             ),
+            "deleted_user_count": len(deleted_users),
         },
     )
+
+
+@login_required
+@admin_required
+@require_POST
+def admin_user_action(request, user_id):
+    target_user = get_object_or_404(HiveUser, pk=user_id)
+    action = request.POST.get("action", "").strip()
+
+    try:
+        message = _apply_admin_user_action(
+            actor=request.current_user,
+            target_user=target_user,
+            action=action,
+        )
+    except ValueError as exc:
+        messages.error(request, str(exc))
+    else:
+        messages.success(request, message)
+
+    return redirect("admin_user_management")
 
 
 @login_required
@@ -397,3 +429,94 @@ def _classify_source_health(source):
         "badge_class": "bg-emerald-100 text-emerald-800",
         "panel_class": "ring-1 ring-emerald-200",
     }
+
+
+def _apply_admin_user_action(*, actor, target_user, action: str) -> str:
+    if action not in {
+        "promote_admin",
+        "demote_admin",
+        "suspend",
+        "activate",
+        "delete",
+    }:
+        raise ValueError("지원하지 않는 사용자 액션입니다.")
+
+    if actor.id == target_user.id and action in {"demote_admin", "suspend", "delete"}:
+        raise ValueError(
+            "자기 자신의 관리자 권한 제거, 비활성화, 삭제는 할 수 없습니다."
+        )
+
+    if action == "promote_admin":
+        if target_user.role == UserRole.ADMIN:
+            raise ValueError("이미 관리자 권한을 가진 사용자입니다.")
+        target_user.role = UserRole.ADMIN
+        target_user.save(update_fields=["role", "updated_at"])
+        return f"{target_user.username} 사용자를 관리자로 승격했습니다."
+
+    if action == "demote_admin":
+        if target_user.role != UserRole.ADMIN:
+            raise ValueError("관리자 권한을 가진 사용자가 아닙니다.")
+        target_user.role = UserRole.USER
+        target_user.save(update_fields=["role", "updated_at"])
+        return f"{target_user.username} 사용자의 관리자 권한을 해제했습니다."
+
+    if action == "suspend":
+        if target_user.status == UserStatus.SUSPENDED:
+            raise ValueError("이미 비활성화된 사용자입니다.")
+        if target_user.status == UserStatus.DELETED:
+            raise ValueError("삭제된 사용자는 먼저 복구할 수 없습니다.")
+        target_user.status = UserStatus.SUSPENDED
+        target_user.save(update_fields=["status", "updated_at"])
+        purge_user_sessions(user=target_user)
+        return f"{target_user.username} 사용자를 비활성화했습니다."
+
+    if action == "activate":
+        if target_user.status == UserStatus.ACTIVE:
+            raise ValueError("이미 활성 사용자입니다.")
+        if target_user.status == UserStatus.DELETED:
+            raise ValueError("제거된 사용자는 다시 활성화할 수 없습니다.")
+        target_user.status = UserStatus.ACTIVE
+        target_user.save(update_fields=["status", "updated_at"])
+        return f"{target_user.username} 사용자를 다시 활성화했습니다."
+
+    if target_user.status == UserStatus.DELETED:
+        raise ValueError("이미 제거된 사용자입니다.")
+    original_username = target_user.username
+    original_email = target_user.email
+    deleted_user_id = target_user.id
+    with transaction.atomic():
+        target_user.status = UserStatus.DELETED
+        target_user.role = UserRole.USER
+        target_user.password_hash = None
+        target_user.profile_image = None
+        target_user.username = _deleted_username_value(target_user)
+        target_user.email = _deleted_email_value(target_user)
+        target_user.save(
+            update_fields=[
+                "status",
+                "role",
+                "password_hash",
+                "profile_image",
+                "username",
+                "email",
+                "updated_at",
+            ]
+        )
+        target_user.oauth_accounts.all().delete()
+        purge_user_sessions(user=target_user)
+    logger.info(
+        "user_deleted actor_id=%s target_user_id=%s previous_username=%s previous_email=%s",
+        actor.id,
+        deleted_user_id,
+        original_username,
+        original_email,
+    )
+    return f"{original_username} 사용자를 제거했습니다."
+
+
+def _deleted_username_value(user) -> str:
+    return f"deleted_{str(user.id).replace('-', '')[:8]}"
+
+
+def _deleted_email_value(user) -> str:
+    return f"deleted+{str(user.id).replace('-', '')[:12]}@deleted.local"

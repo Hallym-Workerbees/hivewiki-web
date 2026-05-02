@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 
 from django.contrib.auth.hashers import make_password
+from django.contrib.sessions.models import Session
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
@@ -147,6 +148,222 @@ class AdminConsoleTests(TestCase):
         self.assertContains(response, "OAuth 연동")
         self.assertContains(response, "GITHUB")
         self.assertContains(response, "미연동")
+
+    def test_admin_can_promote_user_to_admin(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        member_user = HiveUser.objects.create(
+            username="member_user",
+            email="member@example.com",
+            password_hash=make_password("member-pass-123!"),
+            role=UserRole.USER,
+            status=UserStatus.ACTIVE,
+        )
+        self._login(admin_user)
+
+        response = self.client.post(
+            f"/dashboard/admin/users/{member_user.id}/action/",
+            {"action": "promote_admin"},
+        )
+
+        member_user.refresh_from_db()
+        self.assertRedirects(response, "/dashboard/admin/users/")
+        self.assertEqual(member_user.role, UserRole.ADMIN)
+
+    def test_admin_can_suspend_user(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        member_user = HiveUser.objects.create(
+            username="member_user",
+            email="member@example.com",
+            password_hash=make_password("member-pass-123!"),
+            role=UserRole.USER,
+            status=UserStatus.ACTIVE,
+        )
+        self._login(admin_user)
+
+        response = self.client.post(
+            f"/dashboard/admin/users/{member_user.id}/action/",
+            {"action": "suspend"},
+        )
+
+        member_user.refresh_from_db()
+        self.assertRedirects(response, "/dashboard/admin/users/")
+        self.assertEqual(member_user.status, UserStatus.SUSPENDED)
+
+    def test_admin_delete_releases_email_username_and_oauth_link(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        member_user = HiveUser.objects.create(
+            username="member_user",
+            email="member@example.com",
+            password_hash=make_password("member-pass-123!"),
+            role=UserRole.USER,
+            status=UserStatus.ACTIVE,
+        )
+        OAuthAccount.objects.create(
+            user=member_user,
+            provider=OAuthProvider.GOOGLE,
+            provider_user_id="google-member-123",
+            provider_email="member@example.com",
+        )
+        self._login(admin_user)
+
+        response = self.client.post(
+            f"/dashboard/admin/users/{member_user.id}/action/",
+            {"action": "delete"},
+        )
+
+        member_user.refresh_from_db()
+        self.assertRedirects(response, "/dashboard/admin/users/")
+        self.assertEqual(member_user.status, UserStatus.DELETED)
+        self.assertEqual(member_user.role, UserRole.USER)
+        self.assertIsNone(member_user.password_hash)
+        self.assertIsNone(member_user.profile_image)
+        self.assertNotEqual(member_user.email, "member@example.com")
+        self.assertNotEqual(member_user.username, "member_user")
+        self.assertFalse(member_user.oauth_accounts.exists())
+        self.assertFalse(HiveUser.objects.filter(email="member@example.com").exists())
+        self.assertFalse(HiveUser.objects.filter(username="member_user").exists())
+        recreated_user = HiveUser.objects.create(
+            username="member_user",
+            email="member@example.com",
+            password_hash=make_password("new-pass-123!"),
+            role=UserRole.USER,
+            status=UserStatus.ACTIVE,
+        )
+        self.assertEqual(recreated_user.email, "member@example.com")
+
+    def test_admin_delete_success_message_uses_original_username(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        member_user = HiveUser.objects.create(
+            username="member_user",
+            email="member@example.com",
+            password_hash=make_password("member-pass-123!"),
+            role=UserRole.USER,
+            status=UserStatus.ACTIVE,
+        )
+        self._login(admin_user)
+
+        response = self.client.post(
+            f"/dashboard/admin/users/{member_user.id}/action/",
+            {"action": "delete"},
+            follow=True,
+        )
+
+        self.assertRedirects(response, "/dashboard/admin/users/")
+        self.assertContains(response, "member_user 사용자를 제거했습니다.")
+
+    def test_admin_suspend_purges_user_session(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        member_user = HiveUser.objects.create(
+            username="member_user",
+            email="member@example.com",
+            password_hash=make_password("member-pass-123!"),
+            role=UserRole.USER,
+            status=UserStatus.ACTIVE,
+        )
+        member_client = self.client_class()
+        member_session = member_client.session
+        member_session[SESSION_USER_ID_KEY] = str(member_user.id)
+        member_session.save()
+        member_session_key = member_session.session_key
+        member_client.get("/dashboard/")
+        self._login(admin_user)
+
+        response = self.client.post(
+            f"/dashboard/admin/users/{member_user.id}/action/",
+            {"action": "suspend"},
+        )
+
+        member_user.refresh_from_db()
+        self.assertRedirects(response, "/dashboard/admin/users/")
+        self.assertEqual(member_user.status, UserStatus.SUSPENDED)
+        self.assertFalse(
+            Session.objects.filter(session_key=member_session_key).exists()
+        )
+
+    def test_deleted_users_are_separated_from_primary_user_list(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        active_user = HiveUser.objects.create(
+            username="active_user",
+            email="active@example.com",
+            password_hash=make_password("active-pass-123!"),
+            role=UserRole.USER,
+            status=UserStatus.ACTIVE,
+        )
+        deleted_user = HiveUser.objects.create(
+            username="deleted_user",
+            email="deleted@example.com",
+            password_hash=None,
+            role=UserRole.USER,
+            status=UserStatus.DELETED,
+        )
+        self._login(admin_user)
+
+        response = self.client.get("/dashboard/admin/users/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "삭제된 계정")
+        self.assertContains(response, active_user.email)
+        self.assertContains(response, deleted_user.email, count=1)
+
+    def test_admin_cannot_suspend_self(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        self._login(admin_user)
+
+        response = self.client.post(
+            f"/dashboard/admin/users/{admin_user.id}/action/",
+            {"action": "suspend"},
+            follow=True,
+        )
+
+        admin_user.refresh_from_db()
+        self.assertRedirects(response, "/dashboard/admin/users/")
+        self.assertEqual(admin_user.status, UserStatus.ACTIVE)
+        self.assertContains(
+            response,
+            "자기 자신의 관리자 권한 제거, 비활성화, 삭제는 할 수 없습니다.",
+        )
 
     def test_admin_can_open_tag_edit_modal(self):
         admin_user = HiveUser.objects.create(

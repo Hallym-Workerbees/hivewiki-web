@@ -5,6 +5,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
+from importlib import import_module
 from json import loads
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -23,6 +24,7 @@ TIMEZONE_SESSION_KEY = "django_timezone"
 PENDING_OAUTH_CONFIRM_SESSION_KEY = "pending_oauth_confirm"
 OAUTH_ACTION_LOGIN = "login"
 OAUTH_ACTION_LINK = "link"
+USER_SESSION_KEYS_PREFIX = "user_session_keys"
 
 
 @dataclass(frozen=True)
@@ -38,6 +40,10 @@ class OAuthProviderConfig:
 
 class OAuthError(Exception):
     pass
+
+
+def inactive_account_message() -> str:
+    return "이 계정은 비활성화되어 로그인할 수 없습니다. 관리자에게 문의해 주세요."
 
 
 def _normalize_identifier(value: str) -> str:
@@ -148,6 +154,14 @@ def get_active_user_by_email(email: str) -> HiveUser | None:
     )
 
 
+def get_user_by_email(email: str) -> HiveUser | None:
+    return (
+        HiveUser.objects.filter(email__iexact=email)
+        .only("id", "username", "email", "password_hash", "status")
+        .first()
+    )
+
+
 def get_user_oauth_accounts(user: HiveUser):
     return user.oauth_accounts.order_by("provider", "-last_login_at")
 
@@ -193,13 +207,73 @@ def _reset_session_preserving(request, *keys: str) -> None:
         request.session[key] = value
 
 
+def _user_session_index_cache_key(user_id) -> str:
+    return f"{USER_SESSION_KEYS_PREFIX}:{user_id}"
+
+
+def _get_session_store_class():
+    engine = import_module(settings.SESSION_ENGINE)
+    return engine.SessionStore
+
+
+def _get_tracked_session_keys(*, user: HiveUser) -> set[str]:
+    return {
+        session_key
+        for session_key in cache.get(_user_session_index_cache_key(user.id), [])
+        if session_key
+    }
+
+
+def _store_tracked_session_keys(*, user: HiveUser, session_keys: set[str]) -> None:
+    if not session_keys:
+        cache.delete(_user_session_index_cache_key(user.id))
+        return
+    cache.set(
+        _user_session_index_cache_key(user.id),
+        sorted(session_keys),
+        timeout=settings.SESSION_COOKIE_AGE,
+    )
+
+
+def register_user_session(*, request, user: HiveUser) -> None:
+    session_key = request.session.session_key
+    if not session_key:
+        return
+    session_keys = _get_tracked_session_keys(user=user)
+    session_keys.add(session_key)
+    _store_tracked_session_keys(user=user, session_keys=session_keys)
+
+
+def unregister_user_session(*, request, user: HiveUser | None) -> None:
+    session_key = request.session.session_key
+    if user is None or not session_key:
+        return
+    session_keys = _get_tracked_session_keys(user=user)
+    if session_key not in session_keys:
+        return
+    session_keys.remove(session_key)
+    _store_tracked_session_keys(user=user, session_keys=session_keys)
+
+
+def purge_user_sessions(*, user: HiveUser) -> None:
+    session_keys = _get_tracked_session_keys(user=user)
+    if not session_keys:
+        return
+    session_store_class = _get_session_store_class()
+    for session_key in session_keys:
+        session_store_class(session_key=session_key).delete()
+    cache.delete(_user_session_index_cache_key(user.id))
+
+
 def login_user(request, user: HiveUser) -> None:
     _reset_session_preserving(request, TIMEZONE_SESSION_KEY)
     request.session[SESSION_USER_ID_KEY] = str(user.id)
     request.session.cycle_key()
+    register_user_session(request=request, user=user)
 
 
 def logout_user(request) -> None:
+    unregister_user_session(request=request, user=get_current_user(request))
     _reset_session_preserving(request, TIMEZONE_SESSION_KEY)
 
 
@@ -484,9 +558,7 @@ def get_or_create_user_from_oauth_profile(*, provider: str, profile: dict) -> Hi
             )
             if oauth_account:
                 if oauth_account.user.status != UserStatus.ACTIVE:
-                    raise OAuthError(
-                        "현재 계정 상태로는 소셜 로그인을 사용할 수 없습니다."
-                    )
+                    raise OAuthError(inactive_account_message())
                 oauth_account.provider_email = provider_email
                 oauth_account.last_login_at = timezone.now()
                 oauth_account.save(update_fields=["provider_email", "last_login_at"])
@@ -497,7 +569,7 @@ def get_or_create_user_from_oauth_profile(*, provider: str, profile: dict) -> Hi
                 HiveUser.objects.select_for_update().filter(email__iexact=email).first()
             )
             if user is not None and user.status != UserStatus.ACTIVE:
-                raise OAuthError("현재 계정 상태로는 소셜 로그인을 사용할 수 없습니다.")
+                raise OAuthError(inactive_account_message())
             if user is None:
                 user = HiveUser.objects.create(
                     username=_build_unique_username(
@@ -530,7 +602,7 @@ def link_oauth_account_to_user(
         with transaction.atomic():
             locked_user = HiveUser.objects.select_for_update().get(pk=user.pk)
             if locked_user.status != UserStatus.ACTIVE:
-                raise OAuthError("현재 계정 상태로는 소셜 로그인을 연동할 수 없습니다.")
+                raise OAuthError(inactive_account_message())
 
             email = profile["email"].strip().lower()
             provider_user_id = profile["provider_user_id"]

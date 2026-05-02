@@ -98,6 +98,29 @@ class AuthFlowTests(TestCase):
         self.assertContains(response, "이메일 또는 비밀번호가 올바르지 않습니다.")
         self.assertNotIn(SESSION_USER_ID_KEY, self.client.session)
 
+    def test_login_rejects_suspended_user_with_admin_contact_message(self):
+        HiveUser.objects.create(
+            username="suspended_user",
+            email="suspended@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.SUSPENDED,
+        )
+
+        response = self.client.post(
+            "/auth/login/",
+            {
+                "email": "suspended@example.com",
+                "password": self.LOGIN_PASSWORD,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "이 계정은 비활성화되어 로그인할 수 없습니다. 관리자에게 문의해 주세요.",
+        )
+        self.assertNotIn(SESSION_USER_ID_KEY, self.client.session)
+
     def test_protected_page_redirects_to_login_with_next_parameter(self):
         response = self.client.get("/dashboard/")
 
@@ -439,6 +462,68 @@ class AuthFlowTests(TestCase):
         self.assertEqual(oauth_account.user_id, user.id)
         self.assertFalse(user.profile_image)
         self.assertEqual(self.client.session[SESSION_USER_ID_KEY], str(user.id))
+        messages = list(response.wsgi_request._messages)
+        self.assertTrue(
+            any("소셜 로그인이 완료되었습니다." in str(message) for message in messages)
+        )
+        self.assertFalse(
+            any(
+                "보안을 위해 비밀번호 기반 로그인은 중지합니다." in str(message)
+                for message in messages
+            )
+        )
+
+    @patch("apps.accounts.views.exchange_oauth_code_for_profile")
+    def test_oauth_callback_rejects_suspended_user_with_admin_contact_message(
+        self, mock_exchange
+    ):
+        user = HiveUser.objects.create(
+            username="oauth_suspended",
+            email="oauth-suspended@example.com",
+            password_hash=None,
+            status=UserStatus.SUSPENDED,
+        )
+        OAuthAccount.objects.create(
+            user=user,
+            provider=OAuthProvider.GOOGLE,
+            provider_user_id="google-suspended-123",
+            provider_email="oauth-suspended@example.com",
+        )
+        session = self.client.session
+        session["oauth_state"] = {
+            "provider": OAuthProvider.GOOGLE,
+            "state": "test-state",
+            "next_url": "",
+        }
+        session.save()
+        mock_exchange.return_value = (
+            {
+                "provider_user_id": "google-suspended-123",
+                "email": "oauth-suspended@example.com",
+                "provider_email": "oauth-suspended@example.com",
+                "username_hint": "oauthsuspended",
+            },
+            {
+                "provider": OAuthProvider.GOOGLE,
+                "state": "test-state",
+                "next_url": "",
+                "action": "login",
+                "link_user_id": "",
+            },
+        )
+
+        response = self.client.get(
+            "/auth/oauth/google/callback/",
+            {"code": "auth-code", "state": "test-state"},
+            follow=True,
+        )
+
+        self.assertRedirects(response, "/auth/login/")
+        self.assertContains(
+            response,
+            "이 계정은 비활성화되어 로그인할 수 없습니다. 관리자에게 문의해 주세요.",
+        )
+        self.assertNotIn(SESSION_USER_ID_KEY, self.client.session)
 
     @patch("apps.accounts.views.exchange_oauth_code_for_profile")
     def test_github_oauth_callback_requires_confirmation_for_existing_user(
@@ -547,6 +632,13 @@ class AuthFlowTests(TestCase):
         self.assertIsNone(user.password_hash)
         self.assertEqual(self.client.session[SESSION_USER_ID_KEY], str(user.id))
         self.assertNotIn("pending_oauth_confirm", self.client.session)
+        messages = list(confirm_response.wsgi_request._messages)
+        self.assertTrue(
+            any(
+                "보안을 위해 비밀번호 기반 로그인은 중지합니다." in str(message)
+                for message in messages
+            )
+        )
 
     @patch("apps.accounts.views.exchange_oauth_code_for_profile")
     def test_cancel_existing_oauth_link_preserves_next_url(self, mock_exchange):

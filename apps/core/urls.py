@@ -12,6 +12,11 @@ urlpatterns = [
         name="admin_user_management",
     ),
     path(
+        "dashboard/admin/users/<uuid:user_id>/action/",
+        views.admin_user_action,
+        name="admin_user_action",
+    ),
+    path(
         "dashboard/admin/tags/", views.admin_tag_management, name="admin_tag_management"
     ),
     path(

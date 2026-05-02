@@ -19,7 +19,6 @@ from .services import (
     create_user,
     exchange_oauth_code_for_profile,
     format_rate_limit_wait_time,
-    get_active_user_by_email,
     get_available_oauth_providers,
     get_client_ip,
     get_current_user,
@@ -29,7 +28,9 @@ from .services import (
     get_oauth_provider_config,
     get_or_create_user_from_oauth_profile,
     get_unlinked_oauth_providers,
+    get_user_by_email,
     get_user_oauth_accounts,
+    inactive_account_message,
     is_login_rate_limited,
     link_oauth_account_to_user,
     login_user,
@@ -89,8 +90,10 @@ def login_view(request):
         )
         if user is None:
             record_failed_login(email=email, client_ip=client_ip)
-            existing_user = get_active_user_by_email(email)
-            if existing_user and existing_user.oauth_accounts.exists():
+            existing_user = get_user_by_email(email)
+            if existing_user and existing_user.status != UserStatus.ACTIVE:
+                form.add_error(None, inactive_account_message())
+            elif existing_user and existing_user.oauth_accounts.exists():
                 form.add_error(
                     None,
                     "이 계정은 OAuth 로그인만 사용할 수 있습니다. 연결된 소셜 로그인으로 접속해 주세요.",
@@ -211,6 +214,7 @@ def oauth_confirm_existing_account_view(request):
             id=pending_confirmation["user_id"],
             status=UserStatus.ACTIVE,
         )
+        had_password_login = bool(user.password_hash)
         link_oauth_account_to_user(
             user=user,
             provider=pending_confirmation["provider"],
@@ -226,10 +230,12 @@ def oauth_confirm_existing_account_view(request):
         return _redirect_to_login(next_url)
 
     login_user(request, user)
-    messages.success(
-        request,
-        f"{user.username}님, 소셜 로그인이 완료되었습니다. 보안을 위해 비밀번호 기반 로그인은 중지합니다.",
-    )
+    success_message = f"{user.username}님, 소셜 로그인이 완료되었습니다."
+    if had_password_login:
+        success_message = (
+            f"{success_message} 보안을 위해 비밀번호 기반 로그인은 중지합니다."
+        )
+    messages.success(request, success_message)
     return redirect(next_url or "dashboard")
 
 
@@ -261,6 +267,7 @@ def oauth_callback_view(request, provider: str):
                     raise OAuthError(
                         "연동 대상 계정이 변경되었습니다. 다시 시도해 주세요."
                     )
+                had_password_login = bool(current_user.password_hash)
                 link_oauth_account_to_user(
                     user=current_user,
                     provider=provider,
@@ -269,10 +276,12 @@ def oauth_callback_view(request, provider: str):
             except OAuthError as exc:
                 messages.error(request, str(exc))
                 return redirect("mypage")
-            messages.success(
-                request,
-                f"{current_user.username} 계정에 {provider.title()} 로그인을 연결했습니다. 보안을 위해 비밀번호 기반 로그인은 중지합니다.",
-            )
+            success_message = f"{current_user.username} 계정에 {provider.title()} 로그인을 연결했습니다."
+            if had_password_login:
+                success_message = (
+                    f"{success_message} 보안을 위해 비밀번호 기반 로그인은 중지합니다."
+                )
+            messages.success(request, success_message)
             return redirect(next_url or "mypage")
         existing_oauth_account = get_existing_oauth_account_for_profile(
             provider=provider,
@@ -308,12 +317,7 @@ def oauth_callback_view(request, provider: str):
         raise Http404 from exc
 
     login_user(request, user)
-    messages.success(
-        request,
-        f"{user.username}님, 소셜 로그인이 완료되었습니다. 보안을 위해 비밀번호 기반 로그인은 중지합니다."
-        if user.oauth_accounts.exists()
-        else f"{user.username}님, 소셜 로그인이 완료되었습니다.",
-    )
+    messages.success(request, f"{user.username}님, 소셜 로그인이 완료되었습니다.")
     return redirect(next_url or "dashboard")
 
 

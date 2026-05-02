@@ -17,6 +17,16 @@ from .models import IngestionJob, Source, SourceDocument, Tag
 
 logger = logging.getLogger(__name__)
 
+ADMIN_USER_ACTIONS = frozenset(
+    {
+        "promote_admin",
+        "demote_admin",
+        "suspend",
+        "activate",
+        "delete",
+    }
+)
+
 LIST_TAGS = ["지식", "협업", "캠퍼스"]
 
 FEATURED_WIKI = [
@@ -191,6 +201,8 @@ def admin_user_action(request, user_id):
     action = request.POST.get("action", "").strip()
 
     try:
+        if action not in ADMIN_USER_ACTIONS:
+            raise ValueError("지원하지 않는 사용자 액션입니다.")
         message = _apply_admin_user_action(
             actor=request.current_user,
             target_user=target_user,
@@ -432,13 +444,7 @@ def _classify_source_health(source):
 
 
 def _apply_admin_user_action(*, actor, target_user, action: str) -> str:
-    if action not in {
-        "promote_admin",
-        "demote_admin",
-        "suspend",
-        "activate",
-        "delete",
-    }:
+    if action not in ADMIN_USER_ACTIONS:
         raise ValueError("지원하지 않는 사용자 액션입니다.")
 
     if actor.id == target_user.id and action in {"demote_admin", "suspend", "delete"}:

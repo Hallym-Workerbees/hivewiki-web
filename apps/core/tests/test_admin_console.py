@@ -201,6 +201,35 @@ class AdminConsoleTests(TestCase):
         self.assertRedirects(response, "/dashboard/admin/users/")
         self.assertEqual(member_user.status, UserStatus.SUSPENDED)
 
+    def test_admin_user_action_rejects_unknown_action(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        member_user = HiveUser.objects.create(
+            username="member_user",
+            email="member@example.com",
+            password_hash=make_password("member-pass-123!"),
+            role=UserRole.USER,
+            status=UserStatus.ACTIVE,
+        )
+        self._login(admin_user)
+
+        response = self.client.post(
+            f"/dashboard/admin/users/{member_user.id}/action/",
+            {"action": "unexpected"},
+            follow=True,
+        )
+
+        member_user.refresh_from_db()
+        self.assertRedirects(response, "/dashboard/admin/users/")
+        self.assertEqual(member_user.role, UserRole.USER)
+        self.assertEqual(member_user.status, UserStatus.ACTIVE)
+        self.assertContains(response, "지원하지 않는 사용자 액션입니다.")
+
     def test_admin_delete_releases_email_username_and_oauth_link(self):
         admin_user = HiveUser.objects.create(
             username="admin_user",

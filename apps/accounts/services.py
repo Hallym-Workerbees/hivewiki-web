@@ -11,7 +11,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
+from django.core import signing
 from django.core.cache import cache
+from django.core.signing import BadSignature, SignatureExpired
 from django.db import IntegrityError, transaction
 from django.urls import reverse
 from django.utils import timezone
@@ -25,6 +27,8 @@ PENDING_OAUTH_CONFIRM_SESSION_KEY = "pending_oauth_confirm"
 OAUTH_ACTION_LOGIN = "login"
 OAUTH_ACTION_LINK = "link"
 USER_SESSION_KEYS_PREFIX = "user_session_keys"
+PENDING_OAUTH_CONFIRM_SALT = "accounts.pending_oauth_confirm"
+PENDING_OAUTH_CONFIRM_MAX_AGE_SECONDS = 600
 
 
 @dataclass(frozen=True)
@@ -139,8 +143,6 @@ def authenticate_user(*, email: str, password: str) -> HiveUser | None:
     )
     if not user or not user.password_hash:
         return None
-    if OAuthAccount.objects.filter(user=user).exists():
-        return None
     if not check_password(password, user.password_hash):
         return None
     return user
@@ -194,6 +196,37 @@ def get_existing_oauth_account_for_profile(
 
 def get_existing_user_for_oauth_email(profile: dict) -> HiveUser | None:
     return HiveUser.objects.filter(email__iexact=profile["email"]).first()
+
+
+def build_pending_oauth_confirmation(
+    *, provider: str, profile: dict, user_id, next_url: str
+) -> str:
+    return signing.dumps(
+        {
+            "provider": provider,
+            "profile": profile,
+            "user_id": str(user_id),
+            "next_url": next_url,
+        },
+        salt=PENDING_OAUTH_CONFIRM_SALT,
+    )
+
+
+def read_pending_oauth_confirmation(signed_value: str) -> dict:
+    try:
+        return signing.loads(
+            signed_value,
+            salt=PENDING_OAUTH_CONFIRM_SALT,
+            max_age=PENDING_OAUTH_CONFIRM_MAX_AGE_SECONDS,
+        )
+    except SignatureExpired as exc:
+        raise OAuthError(
+            "OAuth 계정 연결 확인 시간이 만료되었습니다. 다시 시도해 주세요."
+        ) from exc
+    except BadSignature as exc:
+        raise OAuthError(
+            "OAuth 계정 연결 확인 정보가 올바르지 않습니다. 다시 시도해 주세요."
+        ) from exc
 
 
 def _reset_session_preserving(request, *keys: str) -> None:
@@ -261,7 +294,10 @@ def purge_user_sessions(*, user: HiveUser) -> None:
         return
     session_store_class = _get_session_store_class()
     for session_key in session_keys:
-        session_store_class(session_key=session_key).delete()
+        session_store = session_store_class(session_key=session_key)
+        if not session_store.exists(session_key):
+            continue
+        session_store.delete()
     cache.delete(_user_session_index_cache_key(user.id))
 
 
@@ -279,14 +315,6 @@ def logout_user(request) -> None:
 
 def update_user_password(*, user: HiveUser, new_password: str) -> HiveUser:
     user.password_hash = make_password(new_password)
-    user.save(update_fields=["password_hash", "updated_at"])
-    return user
-
-
-def disable_password_login(*, user: HiveUser) -> HiveUser:
-    if user.password_hash is None:
-        return user
-    user.password_hash = None
     user.save(update_fields=["password_hash", "updated_at"])
     return user
 
@@ -562,7 +590,6 @@ def get_or_create_user_from_oauth_profile(*, provider: str, profile: dict) -> Hi
                 oauth_account.provider_email = provider_email
                 oauth_account.last_login_at = timezone.now()
                 oauth_account.save(update_fields=["provider_email", "last_login_at"])
-                disable_password_login(user=oauth_account.user)
                 return oauth_account.user
 
             user = (
@@ -570,6 +597,10 @@ def get_or_create_user_from_oauth_profile(*, provider: str, profile: dict) -> Hi
             )
             if user is not None and user.status != UserStatus.ACTIVE:
                 raise OAuthError(inactive_account_message())
+            if user is not None:
+                raise OAuthError(
+                    "같은 이메일의 기존 계정을 확인했습니다. 계정 연결 확인을 다시 진행해 주세요."
+                )
             if user is None:
                 user = HiveUser.objects.create(
                     username=_build_unique_username(
@@ -587,7 +618,6 @@ def get_or_create_user_from_oauth_profile(*, provider: str, profile: dict) -> Hi
                 provider_email=provider_email,
                 last_login_at=timezone.now(),
             )
-            disable_password_login(user=user)
             return user
     except IntegrityError as exc:
         raise OAuthError(
@@ -625,7 +655,6 @@ def link_oauth_account_to_user(
                 existing_account.provider_email = provider_email
                 existing_account.last_login_at = timezone.now()
                 existing_account.save(update_fields=["provider_email", "last_login_at"])
-                disable_password_login(user=locked_user)
                 return existing_account
 
             existing_provider_link = locked_user.oauth_accounts.filter(
@@ -641,7 +670,6 @@ def link_oauth_account_to_user(
                 provider_email=provider_email,
                 last_login_at=timezone.now(),
             )
-            disable_password_login(user=locked_user)
             return oauth_account
     except IntegrityError as exc:
         raise OAuthError(

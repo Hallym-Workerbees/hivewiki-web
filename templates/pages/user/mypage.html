@@ -36,11 +36,9 @@
             <div class="text-xs uppercase tracking-[0.24em] text-stone-400">Login Methods</div>
             <h2 class="mt-2 font-headline text-3xl font-black tracking-tight">로그인 방식</h2>
             {% if password_login_disabled %}
-                <p class="mt-4 text-sm leading-7 text-on-surface-variant">OAuth가 연결된 이후부터는 비밀번호 로그인과 비밀번호 변경이 비활성화됩니다.</p>
+                <p class="mt-4 text-sm leading-7 text-on-surface-variant">이 계정은 현재 비밀번호가 설정되어 있지 않아 OAuth 로그인만 사용할 수 있습니다.</p>
             {% else %}
-                <p class="mt-4 text-sm leading-7 text-on-surface-variant">
-                    현재는 이메일과 비밀번호로 로그인할 수 있습니다. OAuth를 연결하면 이후부터는 OAuth 로그인만 허용됩니다.
-                </p>
+                <p class="mt-4 text-sm leading-7 text-on-surface-variant">현재는 이메일/비밀번호 로그인과 OAuth 로그인을 함께 사용할 수 있습니다.</p>
             {% endif %}
             <div class="mt-6 grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
                 <div class="rounded-[1.75rem] bg-white p-6">
@@ -70,7 +68,7 @@
                 <div class="rounded-[1.75rem] bg-white p-6">
                     <div class="text-xs uppercase tracking-[0.18em] text-stone-400">OAuth 연결</div>
                     <p class="mt-3 text-sm leading-7 text-on-surface-variant">
-                        현재 계정 이메일과 같은 OAuth 계정만 연결할 수 있습니다. 연결이 완료되면 이후에는 비밀번호 로그인을 사용할 수 없습니다.
+                        현재 계정 이메일과 같은 OAuth 계정만 연결할 수 있습니다. 연결 후에도 기존 비밀번호 로그인은 유지됩니다.
                     </p>
                     {% if available_oauth_link_providers %}
                         <div class="mt-5 grid gap-3">

@@ -5,7 +5,11 @@ from django.core.cache import cache
 from django.test import TestCase, override_settings
 
 from apps.accounts.models import HiveUser, OAuthAccount, OAuthProvider, UserStatus
-from apps.accounts.services import SESSION_USER_ID_KEY, TIMEZONE_SESSION_KEY
+from apps.accounts.services import (
+    SESSION_USER_ID_KEY,
+    TIMEZONE_SESSION_KEY,
+    read_pending_oauth_confirmation,
+)
 
 
 @override_settings(
@@ -242,7 +246,7 @@ class AuthFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "현재 비밀번호가 올바르지 않습니다.")
 
-    def test_password_login_is_blocked_after_oauth_is_connected(self):
+    def test_password_login_still_works_after_oauth_is_connected(self):
         user = HiveUser.objects.create(
             username="oauth_locked",
             email="oauthlocked@example.com",
@@ -260,6 +264,31 @@ class AuthFlowTests(TestCase):
             "/auth/login/",
             {
                 "email": "oauthlocked@example.com",
+                "password": self.LOGIN_PASSWORD,
+            },
+        )
+
+        self.assertRedirects(response, "/dashboard/")
+        self.assertEqual(self.client.session[SESSION_USER_ID_KEY], str(user.id))
+
+    def test_password_login_is_blocked_for_oauth_only_account(self):
+        HiveUser.objects.create(
+            username="oauth_only",
+            email="oauthonly@example.com",
+            password_hash=None,
+            status=UserStatus.ACTIVE,
+        )
+        OAuthAccount.objects.create(
+            user=HiveUser.objects.get(email="oauthonly@example.com"),
+            provider=OAuthProvider.GOOGLE,
+            provider_user_id="google-user-oauth-only",
+            provider_email="oauthonly@example.com",
+        )
+
+        response = self.client.post(
+            "/auth/login/",
+            {
+                "email": "oauthonly@example.com",
                 "password": self.LOGIN_PASSWORD,
             },
         )
@@ -287,7 +316,7 @@ class AuthFlowTests(TestCase):
 
         self.assertRedirects(response, "/me/")
 
-    def test_mypage_hides_password_change_when_oauth_is_connected(self):
+    def test_mypage_keeps_password_change_when_password_is_still_set(self):
         user = HiveUser.objects.create(
             username="linked_user",
             email="linked@example.com",
@@ -307,9 +336,9 @@ class AuthFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(
             response,
-            "OAuth가 연결된 이후부터는 비밀번호 로그인과 비밀번호 변경이 비활성화됩니다.",
+            "현재는 이메일/비밀번호 로그인과 OAuth 로그인을 함께 사용할 수 있습니다.",
         )
-        self.assertNotContains(response, 'href="/me/password/"')
+        self.assertContains(response, 'href="/me/password/"')
 
     def test_logout_requires_post(self):
         response = self.client.get("/auth/logout/")
@@ -572,13 +601,13 @@ class AuthFlowTests(TestCase):
                 provider_user_id="github-user-456",
             ).exists()
         )
-        self.assertEqual(
-            self.client.session["pending_oauth_confirm"]["user_id"],
-            str(user.id),
+        pending_confirmation = read_pending_oauth_confirmation(
+            self.client.session["pending_oauth_confirm"]
         )
+        self.assertEqual(pending_confirmation["user_id"], str(user.id))
 
     @patch("apps.accounts.views.exchange_oauth_code_for_profile")
-    def test_confirm_existing_oauth_link_logs_in_and_disables_password(
+    def test_confirm_existing_oauth_link_logs_in_and_preserves_password(
         self, mock_exchange
     ):
         user = HiveUser.objects.create(
@@ -629,15 +658,12 @@ class AuthFlowTests(TestCase):
         )
         self.assertEqual(oauth_account.user_id, user.id)
         user.refresh_from_db()
-        self.assertIsNone(user.password_hash)
+        self.assertTrue(check_password(self.LOGIN_PASSWORD, user.password_hash))
         self.assertEqual(self.client.session[SESSION_USER_ID_KEY], str(user.id))
         self.assertNotIn("pending_oauth_confirm", self.client.session)
         messages = list(confirm_response.wsgi_request._messages)
         self.assertTrue(
-            any(
-                "보안을 위해 비밀번호 기반 로그인은 중지합니다." in str(message)
-                for message in messages
-            )
+            any("소셜 로그인이 완료되었습니다." in str(message) for message in messages)
         )
 
     @patch("apps.accounts.views.exchange_oauth_code_for_profile")
@@ -693,7 +719,7 @@ class AuthFlowTests(TestCase):
         self.assertNotIn("pending_oauth_confirm", self.client.session)
 
     @patch("apps.accounts.views.exchange_oauth_code_for_profile")
-    def test_oauth_link_callback_links_current_user_and_disables_password(
+    def test_oauth_link_callback_links_current_user_and_preserves_password(
         self, mock_exchange
     ):
         user = HiveUser.objects.create(
@@ -735,7 +761,7 @@ class AuthFlowTests(TestCase):
 
         self.assertRedirects(response, "/me/")
         user.refresh_from_db()
-        self.assertIsNone(user.password_hash)
+        self.assertTrue(check_password(self.LOGIN_PASSWORD, user.password_hash))
         self.assertTrue(
             OAuthAccount.objects.filter(
                 user=user,

@@ -5,7 +5,7 @@
             <div class="font-headline text-xl font-extrabold tracking-tight">{{ page_heading|default:"Dashboard" }}</div>
         </div>
         <div class="hidden items-center gap-4 md:flex">
-            {% include "partials/search_bar.html" with placeholder="지식과 게시글을 검색하세요" action=search_action|default:"/search/" target=search_target|default:"#global-search-results" %}
+            {% include "partials/search_bar.html" with placeholder="위키 문서를 검색하세요" action=search_action|default:"/search/" %}
             {% if current_user %}
                 <a href="{% url 'mypage' %}"
                    class="rounded-2xl bg-surface-container-low px-4 py-3 text-sm font-semibold text-on-surface-variant">{{ current_user.username }}</a>

@@ -1,0 +1,32 @@
+<div class="space-y-5">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+            <h3 class="font-headline text-2xl font-extrabold tracking-tight">
+                {% if query %}
+                    "{{ query }}" 검색 결과
+                {% else %}
+                    최근 문서
+                {% endif %}
+            </h3>
+            <p class="mt-2 text-sm leading-7 text-on-surface-variant">
+                {% if query %}
+                    제목, 요약, 본문에서 일치하는 문서를 보여줍니다.
+                {% else %}
+                    최근 업데이트된 위키 문서를 확인할 수 있습니다.
+                {% endif %}
+            </p>
+        </div>
+        <div class="rounded-full bg-surface-container-high px-4 py-2 text-sm font-semibold text-on-surface-variant">
+            {{ wiki_result_count }}건
+        </div>
+    </div>
+    {% if wiki_items %}
+        <div class="grid gap-5 lg:grid-cols-2">
+            {% for item in wiki_items %}
+                {% include "partials/wiki_card.html" %}
+            {% endfor %}
+        </div>
+    {% else %}
+        {% include "partials/empty_state.html" with title="문서를 찾지 못했습니다" description="다른 키워드나 더 짧은 검색어로 다시 시도해 보세요." %}
+    {% endif %}
+</div>

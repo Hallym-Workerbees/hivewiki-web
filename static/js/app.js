@@ -5,6 +5,9 @@ document.body.addEventListener("htmx:afterSwap", (event) => {
   }
   formatTimezoneSensitiveElements(document.body.dataset.currentTimezone);
   formatLocalDatetimeInputs(document.body.dataset.currentTimezone);
+  initializeWikiToc();
+  initializeCodeCopyButtons();
+  renderMath(target || document.body);
 });
 
 function closeAdminModal() {
@@ -30,6 +33,210 @@ document.body.addEventListener("click", (event) => {
   }
   closeAdminModal();
 });
+
+document.body.addEventListener("click", async (event) => {
+  const copyTrigger =
+    event.target instanceof Element
+      ? event.target.closest("[data-copy-trigger]")
+      : null;
+  if (!copyTrigger) {
+    return;
+  }
+
+  const copySource = copyTrigger.dataset.copySource;
+  const copyNode = copySource ? document.getElementById(copySource) : null;
+  const copyText =
+    copyNode instanceof HTMLTextAreaElement
+      ? copyNode.value
+      : copyNode?.textContent;
+  if (!copyText) {
+    return;
+  }
+
+  try {
+    await writeToClipboard(copyText);
+  } catch {
+    return;
+  }
+
+  const panel = copyTrigger.closest(".wiki-actions-panel");
+  const labelNode = copyTrigger.querySelector("[data-copy-label-text]");
+  if (!(labelNode instanceof HTMLElement)) {
+    return;
+  }
+
+  panel?.querySelectorAll("[data-copy-trigger]").forEach((button) => {
+    button.classList.remove("is-copied");
+    if (!(button instanceof HTMLElement)) {
+      return;
+    }
+    const textNode = button.querySelector("[data-copy-label-text]");
+    if (!(textNode instanceof HTMLElement)) {
+      return;
+    }
+    const defaultText = button.dataset.copyDefaultText;
+    if (defaultText) {
+      textNode.textContent = defaultText;
+    }
+  });
+
+  if (!copyTrigger.dataset.copyDefaultText) {
+    copyTrigger.dataset.copyDefaultText = labelNode.textContent || "";
+  }
+  copyTrigger.classList.add("is-copied");
+  labelNode.textContent =
+    copyTrigger.dataset.copySuccessText || "복사됨!";
+  window.clearTimeout(Number(copyTrigger.dataset.resetTimer || 0));
+  const timerId = window.setTimeout(() => {
+    copyTrigger.classList.remove("is-copied");
+    labelNode.textContent = copyTrigger.dataset.copyDefaultText || "";
+  }, 1800);
+  copyTrigger.dataset.resetTimer = String(timerId);
+});
+
+async function writeToClipboard(value) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  const fallback = document.createElement("textarea");
+  fallback.value = value;
+  fallback.setAttribute("readonly", "");
+  fallback.style.position = "fixed";
+  fallback.style.top = "-9999px";
+  fallback.style.left = "-9999px";
+  document.body.appendChild(fallback);
+  fallback.select();
+  fallback.setSelectionRange(0, fallback.value.length);
+  const copied = document.execCommand("copy");
+  document.body.removeChild(fallback);
+  if (!copied) {
+    throw new Error("Clipboard copy failed");
+  }
+}
+
+function initializeCodeCopyButtons() {
+  document.querySelectorAll(".codehilite").forEach((block) => {
+    if (!(block instanceof HTMLElement) || block.dataset.copyReady === "true") {
+      return;
+    }
+
+    const codeNode = block.querySelector("code");
+    if (!(codeNode instanceof HTMLElement)) {
+      return;
+    }
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "code-copy-button";
+    button.textContent = "Copy";
+    button.addEventListener("click", async () => {
+      try {
+        await writeToClipboard(codeNode.innerText);
+      } catch {
+        return;
+      }
+
+      const originalText = button.dataset.defaultText || "Copy";
+      button.textContent = "Copied!";
+      window.clearTimeout(Number(button.dataset.resetTimer || 0));
+      const timerId = window.setTimeout(() => {
+        button.textContent = originalText;
+      }, 1600);
+      button.dataset.defaultText = originalText;
+      button.dataset.resetTimer = String(timerId);
+    });
+
+    block.appendChild(button);
+    block.dataset.copyReady = "true";
+  });
+}
+
+function renderMath(root) {
+  if (typeof window.renderMathInElement !== "function") {
+    return;
+  }
+
+  window.renderMathInElement(root, {
+    delimiters: [
+      { left: "$$", right: "$$", display: true },
+      { left: "\\[", right: "\\]", display: true },
+      { left: "$", right: "$", display: false },
+      { left: "\\(", right: "\\)", display: false },
+    ],
+    throwOnError: false,
+  });
+}
+
+function initializeWikiToc() {
+  const tocLinks = Array.from(document.querySelectorAll("[data-toc-link]"));
+  if (!tocLinks.length) {
+    return;
+  }
+
+  const headingMap = new Map();
+  tocLinks.forEach((link) => {
+    const targetId = link.getAttribute("data-toc-target");
+    if (!targetId) {
+      return;
+    }
+    const heading = document.getElementById(targetId);
+    if (!heading) {
+      return;
+    }
+    headingMap.set(targetId, heading);
+  });
+
+  const setActiveLink = (activeId) => {
+    tocLinks.forEach((link) => {
+      const isActive = link.getAttribute("data-toc-target") === activeId;
+      link.classList.toggle("bg-surface-container-high", isActive);
+      link.classList.toggle("text-on-surface", isActive);
+      link.classList.toggle("font-semibold", isActive);
+    });
+  };
+
+  const headingIds = Array.from(headingMap.keys());
+  if (!headingIds.length) {
+    return;
+  }
+  setActiveLink(headingIds[0]);
+
+  if (!("IntersectionObserver" in window)) {
+    return;
+  }
+
+  let activeId = headingIds[0];
+  const observer = new IntersectionObserver(
+    (entries) => {
+      const visibleEntries = entries
+        .filter((entry) => entry.isIntersecting)
+        .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+
+      if (visibleEntries.length) {
+        activeId = visibleEntries[0].target.id;
+        setActiveLink(activeId);
+        return;
+      }
+
+      const passedHeadings = headingIds.filter((id) => {
+        const heading = headingMap.get(id);
+        return heading && heading.getBoundingClientRect().top < 140;
+      });
+      if (passedHeadings.length) {
+        activeId = passedHeadings[passedHeadings.length - 1];
+        setActiveLink(activeId);
+      }
+    },
+    {
+      rootMargin: "-18% 0px -66% 0px",
+      threshold: [0, 1],
+    }
+  );
+
+  headingMap.forEach((heading) => observer.observe(heading));
+}
 
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") {
@@ -183,6 +390,9 @@ async function syncBrowserTimezone() {
 }
 
 void syncBrowserTimezone();
+initializeWikiToc();
+initializeCodeCopyButtons();
+window.addEventListener("load", () => renderMath(document.body));
 
 const flashMessages = document.querySelectorAll(".flash-message");
 

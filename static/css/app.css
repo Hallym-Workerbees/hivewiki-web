@@ -139,6 +139,42 @@ h6 {
   margin: 0;
 }
 
+.reading-prose .codehilite .c,
+.reading-prose .codehilite .cm,
+.reading-prose .codehilite .c1 {
+  color: #8b887d;
+}
+
+.reading-prose .codehilite .k,
+.reading-prose .codehilite .kd,
+.reading-prose .codehilite .kn,
+.reading-prose .codehilite .ow {
+  color: #f92672;
+}
+
+.reading-prose .codehilite .nf,
+.reading-prose .codehilite .fm {
+  color: #a6e22e;
+}
+
+.reading-prose .codehilite .nb,
+.reading-prose .codehilite .bp,
+.reading-prose .codehilite .kc {
+  color: #66d9ef;
+}
+
+.reading-prose .codehilite .s,
+.reading-prose .codehilite .s1,
+.reading-prose .codehilite .s2,
+.reading-prose .codehilite .sa {
+  color: #e6db74;
+}
+
+.reading-prose .codehilite .mi,
+.reading-prose .codehilite .mf {
+  color: #ae81ff;
+}
+
 .reading-prose .task-list {
   list-style: none;
   padding-left: 0;

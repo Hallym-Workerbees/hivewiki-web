@@ -1,5 +1,6 @@
 import uuid
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
@@ -62,6 +63,10 @@ class VectorField(models.Field):
         if value is None or isinstance(value, str):
             return value
         if isinstance(value, (list, tuple)):
+            if len(value) != self.dimensions:
+                raise ValidationError(
+                    f"Expected {self.dimensions} embedding dimensions, got {len(value)}."
+                )
             return "[" + ",".join(str(float(item)) for item in value) + "]"
         return str(value)
 

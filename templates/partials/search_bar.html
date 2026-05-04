@@ -6,7 +6,7 @@
         <span class="text-stone-400">⌕</span>
         <input type="text"
                name="q"
-               value="{{ value|default:query|default:'' }}"
+               value="{% firstof value query '' %}"
                placeholder="{{ placeholder|default:'검색어를 입력하세요' }}"
                class="w-full border-0 bg-transparent p-0 text-sm text-on-surface placeholder:text-stone-400 focus:ring-0">
     </div>

@@ -3,10 +3,11 @@ document.body.addEventListener("htmx:afterSwap", (event) => {
   if (target && target.id) {
     target.dataset.lastUpdated = "true";
   }
-  formatTimezoneSensitiveElements(document.body.dataset.currentTimezone);
-  formatLocalDatetimeInputs(document.body.dataset.currentTimezone);
-  initializeWikiToc();
-  initializeCodeCopyButtons();
+  const root = target instanceof Element ? target : document.body;
+  formatTimezoneSensitiveElements(document.body.dataset.currentTimezone, root);
+  formatLocalDatetimeInputs(document.body.dataset.currentTimezone, root);
+  initializeWikiToc(root);
+  initializeCodeCopyButtons(root);
   renderMath(target || document.body);
 });
 
@@ -116,8 +117,8 @@ async function writeToClipboard(value) {
   }
 }
 
-function initializeCodeCopyButtons() {
-  document.querySelectorAll(".codehilite").forEach((block) => {
+function initializeCodeCopyButtons(root = document) {
+  root.querySelectorAll(".codehilite").forEach((block) => {
     if (!(block instanceof HTMLElement) || block.dataset.copyReady === "true") {
       return;
     }
@@ -133,7 +134,7 @@ function initializeCodeCopyButtons() {
     button.textContent = "Copy";
     button.addEventListener("click", async () => {
       try {
-        await writeToClipboard(codeNode.innerText);
+        await writeToClipboard(codeNode.textContent || "");
       } catch {
         return;
       }
@@ -169,9 +170,19 @@ function renderMath(root) {
   });
 }
 
-function initializeWikiToc() {
-  const tocLinks = Array.from(document.querySelectorAll("[data-toc-link]"));
+function initializeWikiToc(root = document) {
+  const tocNav =
+    root instanceof Element
+      ? root.querySelector("[data-toc-nav]") || document.querySelector("[data-toc-nav]")
+      : document.querySelector("[data-toc-nav]");
+  if (!(tocNav instanceof HTMLElement)) {
+    disconnectWikiTocObserver();
+    return;
+  }
+
+  const tocLinks = Array.from(tocNav.querySelectorAll("[data-toc-link]"));
   if (!tocLinks.length) {
+    disconnectWikiTocObserver();
     return;
   }
 
@@ -207,6 +218,7 @@ function initializeWikiToc() {
     return;
   }
 
+  disconnectWikiTocObserver();
   let activeId = headingIds[0];
   const observer = new IntersectionObserver(
     (entries) => {
@@ -236,6 +248,14 @@ function initializeWikiToc() {
   );
 
   headingMap.forEach((heading) => observer.observe(heading));
+  window.hiveWikiTocObserver = observer;
+}
+
+function disconnectWikiTocObserver() {
+  if (window.hiveWikiTocObserver instanceof IntersectionObserver) {
+    window.hiveWikiTocObserver.disconnect();
+    window.hiveWikiTocObserver = null;
+  }
 }
 
 document.addEventListener("keydown", (event) => {
@@ -262,12 +282,12 @@ function formatPartsToDate(parts, includeTime) {
   return `${dateText} ${values.hour}:${values.minute}`;
 }
 
-function formatTimezoneSensitiveElements(timezoneName) {
+function formatTimezoneSensitiveElements(timezoneName, root = document) {
   if (!timezoneName) {
     return;
   }
 
-  document.querySelectorAll("[data-local-datetime]").forEach((element) => {
+  root.querySelectorAll("[data-local-datetime]").forEach((element) => {
     const datetimeValue = element.dataset.localDatetime;
     if (!datetimeValue) {
       return;
@@ -313,12 +333,12 @@ function formatDateTimeLocalValue(date, timezoneName) {
   return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
 }
 
-function formatLocalDatetimeInputs(timezoneName) {
+function formatLocalDatetimeInputs(timezoneName, root = document) {
   if (!timezoneName) {
     return;
   }
 
-  document.querySelectorAll("[data-local-datetime-input]").forEach((element) => {
+  root.querySelectorAll("[data-local-datetime-input]").forEach((element) => {
     const datetimeValue = element.dataset.localDatetimeSource;
     if (!datetimeValue) {
       return;

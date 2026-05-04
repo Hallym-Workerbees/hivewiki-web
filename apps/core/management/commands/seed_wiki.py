@@ -283,8 +283,16 @@ confidence = \frac{verified\_sources}{all\_claims}
 class Command(BaseCommand):
     help = "Seed local wiki data into the current database."
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--with-mock-embeddings",
+            action="store_true",
+            help="Seed deterministic mock embeddings for local testing.",
+        )
+
     @transaction.atomic
     def handle(self, *args, **options):
+        use_mock_embeddings = options["with_mock_embeddings"]
         seeded_documents = 0
         seeded_revisions = 0
         seeded_sources = 0
@@ -327,16 +335,17 @@ class Command(BaseCommand):
                 )
                 chunk_instances.append(chunk)
 
-                ChunkEmbedding.objects.update_or_create(
-                    source_chunk=chunk,
-                    embedding_model=EMBEDDING_MODEL,
-                    defaults={
-                        "embedding_dim": EMBEDDING_DIM,
-                        "embedding": self._build_embedding(chunk.chunk_index),
-                        "content_hash": self._content_hash(chunk.content_text),
-                    },
-                )
-                seeded_embeddings += 1
+                if use_mock_embeddings:
+                    ChunkEmbedding.objects.update_or_create(
+                        source_chunk=chunk,
+                        embedding_model=EMBEDDING_MODEL,
+                        defaults={
+                            "embedding_dim": EMBEDDING_DIM,
+                            "embedding": self._build_embedding(chunk.chunk_index),
+                            "content_hash": self._content_hash(chunk.content_text),
+                        },
+                    )
+                    seeded_embeddings += 1
 
             wiki_document, created = WikiDocument.objects.update_or_create(
                 slug=seed["wiki"]["slug"],
@@ -391,6 +400,13 @@ class Command(BaseCommand):
                 f"{seeded_embeddings} embeddings."
             )
         )
+        if not use_mock_embeddings:
+            self.stdout.write(
+                self.style.WARNING(
+                    "Mock embeddings were skipped. Re-run with "
+                    "--with-mock-embeddings if you need deterministic local vectors."
+                )
+            )
 
     def _build_embedding(self, seed_value):
         base = seed_value + 1

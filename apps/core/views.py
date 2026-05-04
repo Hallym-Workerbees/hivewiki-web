@@ -14,6 +14,7 @@ from apps.accounts.models import HiveUser, OAuthAccount, UserRole, UserStatus
 from apps.accounts.services import purge_user_sessions
 
 from .forms import SourceForm, TagForm
+from .markdown_rendering import get_cached_revision_render
 from .models import (
     IngestionJob,
     Source,
@@ -23,11 +24,7 @@ from .models import (
     WikiDocumentStatus,
 )
 from .search import get_wiki_search_results
-from .wiki_markdown import (
-    annotate_toc_items,
-    build_markdown_context,
-    strip_leading_title_heading,
-)
+from .wiki_markdown import strip_leading_title_heading
 
 logger = logging.getLogger(__name__)
 
@@ -145,18 +142,16 @@ def wiki_home(request):
 
 def wiki_detail(request, slug):
     document = get_object_or_404(
-        WikiDocument.objects.select_related("current_revision"),
+        WikiDocument.objects.select_related("current_revision").filter(
+            current_revision__isnull=False
+        ),
         slug=slug,
         status=WikiDocumentStatus.PUBLISHED,
     )
     revision = document.current_revision
-    display_markdown = (
-        strip_leading_title_heading(revision.content_markdown, document.title)
-        if revision
-        else ""
+    rendered_revision = get_cached_revision_render(
+        revision=revision, title=document.title
     )
-    _, toc_items = build_markdown_context(display_markdown)
-    toc_items = annotate_toc_items(toc_items)
     share_url = request.build_absolute_uri(
         reverse("wiki_detail", kwargs={"slug": document.slug})
     )
@@ -167,8 +162,10 @@ def wiki_detail(request, slug):
             "page_heading": document.title,
             "document": document,
             "revision": revision,
-            "display_markdown": display_markdown,
-            "toc_items": toc_items,
+            "query": "",
+            "display_markdown": rendered_revision["display_markdown"],
+            "rendered_markdown": rendered_revision["rendered_markdown"],
+            "toc_items": rendered_revision["toc_items"],
             "share_url": share_url,
             "copy_human_text": _build_human_copy(document, revision, share_url),
             "copy_agent_text": _build_agent_copy(document, revision, share_url),
@@ -178,13 +175,11 @@ def wiki_detail(request, slug):
 
 def integrated_search(request):
     query = request.GET.get("q", "").strip()
-    if request.headers.get("HX-Request") == "true" and not query:
-        return HttpResponse("")
-
+    is_htmx_request = request.headers.get("HX-Request") == "true"
     search_results = get_wiki_search_results(query=query, limit=16)
     template_name = (
         "partials/global_search_results.html"
-        if request.headers.get("HX-Request") == "true"
+        if is_htmx_request
         else "pages/search/results.html"
     )
     return render(
@@ -196,6 +191,7 @@ def integrated_search(request):
             "list_tags": LIST_TAGS,
             "wiki_items": search_results["items"],
             "wiki_result_count": search_results["total_count"],
+            "show_blank_query_state": is_htmx_request and not query,
         },
     )
 

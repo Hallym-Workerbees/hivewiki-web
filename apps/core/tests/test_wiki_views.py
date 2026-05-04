@@ -66,9 +66,7 @@ class WikiViewTests(TestCase):
         self.assertContains(response, "커뮤니티 질문을 위키로 전환하는 기준")
         self.assertContains(response, '<h2 id="선정-기준">선정 기준</h2>', html=True)
         self.assertContains(response, "<li>반복 질문</li>", html=True)
-        self.assertContains(
-            response, "&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;"
-        )
+        self.assertContains(response, "&lt;script&gt;alert('xss')&lt;/script&gt;")
         self.assertContains(response, "data-toc-link")
         self.assertContains(response, 'href="#선정-기준"')
         self.assertContains(response, "문서 공유")
@@ -85,6 +83,34 @@ class WikiViewTests(TestCase):
         )
         self.assertContains(response, 'data-copy-success-text="링크 복사됨!"')
         self.assertContains(response, 'id="human-copy"')
+        self.assertNotContains(response, 'style="')
+
+    def test_wiki_detail_adds_safe_rel_to_links(self):
+        document = WikiDocument.objects.create(
+            title="외부 링크 문서",
+            slug="external-link-doc",
+            summary="외부 링크 보안 속성을 확인합니다.",
+            status=WikiDocumentStatus.PUBLISHED,
+            updated_at=timezone.now(),
+        )
+        revision = WikiRevision.objects.create(
+            wiki_document=document,
+            revision_number=1,
+            content_markdown="[문서 링크](https://example.com)",
+            generation_type=WikiGenerationType.AI,
+            generation_model="gpt-5.5",
+        )
+        document.current_revision = revision
+        document.save(update_fields=["current_revision"])
+
+        response = self.client.get("/wiki/external-link-doc/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            '<a href="https://example.com" rel="noopener noreferrer">문서 링크</a>',
+            html=True,
+        )
 
     def test_wiki_detail_does_not_repeat_document_title_from_leading_h1(self):
         document = WikiDocument.objects.create(
@@ -137,3 +163,16 @@ class WikiViewTests(TestCase):
 
         self.assertEqual(home_response.status_code, 200)
         self.assertEqual(detail_response.status_code, 200)
+
+    def test_wiki_detail_requires_current_revision_for_published_document(self):
+        WikiDocument.objects.create(
+            title="리비전 없는 공개 문서",
+            slug="published-without-revision",
+            summary="공개 문서는 현재 리비전이 있어야 합니다.",
+            status=WikiDocumentStatus.PUBLISHED,
+            updated_at=timezone.now(),
+        )
+
+        response = self.client.get("/wiki/published-without-revision/")
+
+        self.assertEqual(response.status_code, 404)

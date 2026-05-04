@@ -141,7 +141,7 @@ class SearchViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'value="회고"', html=False)
 
-    def test_integrated_search_returns_empty_response_for_blank_htmx_query(self):
+    def test_integrated_search_returns_empty_state_for_blank_htmx_query(self):
         response = self.client.get(
             "/search/",
             {"q": ""},
@@ -149,7 +149,11 @@ class SearchViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.content, b"")
+        self.assertContains(response, "검색어를 입력해 주세요")
+        self.assertContains(
+            response,
+            "찾고 싶은 문서 제목, 요약, 본문 키워드를 입력하면 결과를 바로 보여줍니다.",
+        )
 
     def test_integrated_search_shows_recent_documents_when_query_is_blank(self):
         document = WikiDocument.objects.create(

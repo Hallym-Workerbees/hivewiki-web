@@ -1,5 +1,4 @@
 {% extends "layouts/app.html" %}
-{% load markdown_extras %}
 {% block title %}
     HiveWiki | {{ document.title }}
 {% endblock title %}
@@ -89,7 +88,7 @@
                 <textarea id="agent-copy" hidden readonly>{{ copy_agent_text }}</textarea>
                 {% if revision %}
                     <article class="reading-prose prose prose-stone mt-8 max-w-none leading-8 text-on-surface">
-                        {{ display_markdown|render_markdown }}
+                        {{ rendered_markdown|safe }}
                     </article>
                 {% else %}
                     {% include "partials/empty_state.html" with title="표시할 리비전이 없습니다" description="현재 문서에 연결된 최신 리비전이 없습니다." %}
@@ -103,10 +102,9 @@
                                 {% for item in toc_items %}
                                     <li>
                                         <a href="#{{ item.id }}"
-                                           class="block rounded-xl px-3 py-2 transition hover:bg-surface-container-high hover:text-on-surface"
+                                           class="block rounded-xl px-3 py-2 transition hover:bg-surface-container-high hover:text-on-surface {% if item.toc_level == 1 %}pl-3{% elif item.toc_level == 2 %}pl-4{% elif item.toc_level == 3 %}pl-6{% elif item.toc_level == 4 %}pl-8{% elif item.toc_level == 5 %}pl-10{% else %}pl-12{% endif %}"
                                            data-toc-link
-                                           data-toc-target="{{ item.id }}"
-                                           style="padding-left: {% if item.toc_level == 1 %}0.75{% elif item.toc_level == 2 %}1{% elif item.toc_level == 3 %}1.5{% elif item.toc_level == 4 %}2{% elif item.toc_level == 5 %}2.5{% else %}3{% endif %}rem">
+                                           data-toc-target="{{ item.id }}">
                                             <span class="inline-flex min-w-[2.25rem] text-stone-400">{{ item.label }}</span>
                                             <span>{{ item.text }}</span>
                                         </a>

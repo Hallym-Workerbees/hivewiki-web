@@ -112,6 +112,37 @@ class WikiViewTests(TestCase):
             html=True,
         )
 
+    def test_wiki_detail_renders_code_blocks_without_double_escaped_entities(self):
+        document = WikiDocument.objects.create(
+            title="코드 블록 문서",
+            slug="code-block-doc",
+            summary="코드 블록 렌더링을 확인합니다.",
+            status=WikiDocumentStatus.PUBLISHED,
+            updated_at=timezone.now(),
+        )
+        revision = WikiRevision.objects.create(
+            wiki_document=document,
+            revision_number=1,
+            content_markdown="""```python
+def promote_question_to_wiki(question, chunks):
+    if question.repeat_count < 2:
+        return "keep_in_community"
+```
+""",
+            generation_type=WikiGenerationType.AI,
+            generation_model="gpt-5.5",
+        )
+        document.current_revision = revision
+        document.save(update_fields=["current_revision"])
+
+        response = self.client.get("/wiki/code-block-doc/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "&quot;keep_in_community&quot;")
+        self.assertContains(response, '<span class="o">&lt;</span>', html=False)
+        self.assertNotContains(response, "&amp;quot;keep_in_community&amp;quot;")
+        self.assertNotContains(response, "&amp;lt;")
+
     def test_wiki_detail_does_not_repeat_document_title_from_leading_h1(self):
         document = WikiDocument.objects.create(
             title="커뮤니티 질문을 위키로 전환하는 기준",

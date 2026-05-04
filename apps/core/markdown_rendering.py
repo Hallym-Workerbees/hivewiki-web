@@ -1,3 +1,5 @@
+import re
+
 import bleach
 import markdown
 from django.core.cache import cache
@@ -47,6 +49,7 @@ ALLOWED_ATTRIBUTES = {
     "input": ["checked", "disabled", "type"],
 }
 REVISION_RENDER_CACHE_TIMEOUT = 60 * 60 * 24 * 7
+CODE_NODE_RE = re.compile(r"<code\b[^>]*>.*?</code>", re.DOTALL)
 
 
 def build_rendered_markdown(
@@ -90,7 +93,7 @@ def build_rendered_markdown(
         skip_tags=["pre", "code"],
         parse_email=False,
     )
-    return linked, annotate_toc_items(toc_items)
+    return _restore_code_entities(linked), annotate_toc_items(toc_items)
 
 
 def get_cached_revision_render(*, revision, title: str) -> dict[str, object]:
@@ -124,3 +127,18 @@ def _set_link_rel(attrs, new=False):
 
     attrs[(None, "rel")] = "noopener noreferrer"
     return attrs
+
+
+def _restore_code_entities(rendered_html: str) -> str:
+    return CODE_NODE_RE.sub(_restore_code_node_entities, rendered_html)
+
+
+def _restore_code_node_entities(match: re.Match[str]) -> str:
+    code_html = match.group(0)
+    return (
+        code_html.replace("&amp;lt;", "&lt;")
+        .replace("&amp;gt;", "&gt;")
+        .replace("&amp;quot;", "&quot;")
+        .replace("&amp;#39;", "&#39;")
+        .replace("&amp;amp;", "&amp;")
+    )

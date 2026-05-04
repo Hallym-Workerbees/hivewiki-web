@@ -1,0 +1,41 @@
+<div class="space-y-6">
+    {% if show_blank_query_state %}
+        {% include "partials/empty_state.html" with title="검색어를 입력해 주세요" description="찾고 싶은 문서 제목, 요약, 본문 키워드를 입력하면 결과를 바로 보여줍니다." %}
+    {% else %}
+        {% if query %}
+            <div class="rounded-[1.75rem] bg-surface-container-low px-5 py-4 text-sm text-on-surface-variant">
+                <span>검색어</span>
+                <span class="ml-2 font-semibold text-on-surface">{{ query }}</span>
+                <span class="ml-3 text-stone-400">문서 {{ wiki_result_count }}건</span>
+            </div>
+        {% endif %}
+        <section class="space-y-4">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h3 class="font-headline text-2xl font-extrabold tracking-tight">위키 문서</h3>
+                    <p class="mt-2 text-sm leading-7 text-on-surface-variant">
+                        {% if query %}
+                            제목, 요약, 본문에서 일치하는 결과입니다.
+                        {% else %}
+                            최근 업데이트된 문서를 둘러보고, 필요한 경우 바로 검색으로 좁혀갈 수 있습니다.
+                        {% endif %}
+                    </p>
+                </div>
+                <div class="rounded-full bg-surface-container-high px-4 py-2 text-sm font-semibold text-on-surface-variant">
+                    {{ wiki_result_count }}건
+                </div>
+            </div>
+            {% if wiki_items %}
+                <div class="grid gap-5 lg:grid-cols-2">
+                    {% for item in wiki_items %}
+                        {% include "partials/wiki_card.html" %}
+                    {% endfor %}
+                </div>
+            {% elif query %}
+                {% include "partials/empty_state.html" with title="검색 결과가 없습니다" description="검색어를 바꾸거나 더 일반적인 표현으로 다시 시도해 보세요." %}
+            {% else %}
+                {% include "partials/empty_state.html" with title="최근 문서가 없습니다" description="문서가 쌓이면 이곳에서 최근 업데이트 항목을 바로 확인할 수 있습니다." %}
+            {% endif %}
+        </section>
+    {% endif %}
+</div>

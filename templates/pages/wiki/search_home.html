@@ -4,21 +4,17 @@
 {% endblock title %}
 {% block app_content %}
     <section class="mx-auto max-w-7xl space-y-8">
-        {% include "partials/section_header.html" with eyebrow="Wiki" title="지식 탐색의 시작점" description="위키 첫 화면은 검색 입력과 큐레이션 카드가 중심이 되도록 설계했습니다." %}
+        {% include "partials/section_header.html" with eyebrow="Wiki" title="위키 둘러보기" description="주제나 키워드로 문서를 찾고, 최근 정리된 내용을 바로 확인할 수 있습니다." %}
         <div class="rounded-[2rem] bg-surface-container-low p-8">
             <h2 class="font-headline text-4xl font-black tracking-tight">찾고 싶은 문서를 바로 검색하세요</h2>
             <p class="mt-3 max-w-2xl text-sm leading-7 text-on-surface-variant">
-                태그, 키워드, 커뮤니티 질문을 기준으로 바로 탐색을 시작할 수 있게 기본 검색 영역을 크게 배치했습니다.
+                운영 기록, 수업 정보, 개발 메모처럼 반복해서 찾게 되는 내용을 빠르게 검색해보세요.
             </p>
             <div class="mt-8 max-w-3xl">
-                {% include "partials/search_bar.html" with placeholder="운영, 수업, 개발, 회고를 검색하세요" action="/search/" target="#wiki-search-results" %}
+                {% include "partials/search_bar.html" with placeholder="운영, 수업, 개발, 회고를 검색하세요" action="/wiki/" target="#wiki-search-results" push_url="false" value=query %}
             </div>
-            <div id="wiki-search-results" class="mt-6"></div>
-        </div>
-        <div class="grid gap-5 lg:grid-cols-2">
-            {% for item in wiki_items %}
-                {% include "partials/wiki_card.html" %}
-            {% endfor %}
+            <div id="wiki-search-results" class="mt-6">{% include "partials/wiki_search_results.html" %}</div>
         </div>
     </section>
+    {% include "partials/wiki_write_fab.html" %}
 {% endblock app_content %}

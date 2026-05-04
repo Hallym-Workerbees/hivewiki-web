@@ -1,5 +1,6 @@
 import uuid
 
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
@@ -27,6 +28,61 @@ class SourceDocumentWikiStatus(models.TextChoices):
     REQUESTED = "REQUESTED", "Requested"
     COMPLETED = "COMPLETED", "Completed"
     FAILED = "FAILED", "Failed"
+
+
+class WikiDocumentStatus(models.TextChoices):
+    PUBLISHED = "published", "Published"
+    ARCHIVED = "archived", "Archived"
+    DELETED = "deleted", "Deleted"
+
+
+class WikiGenerationType(models.TextChoices):
+    AI = "ai", "AI"
+    HUMAN = "human", "Human"
+
+
+class VectorField(models.Field):
+    description = "PostgreSQL vector field"
+
+    def __init__(self, *args, dimensions, **kwargs):
+        self.dimensions = dimensions
+        super().__init__(*args, **kwargs)
+
+    def db_type(self, connection):
+        return f"vector({self.dimensions})"
+
+    def deconstruct(self):
+        name, path, args, kwargs = super().deconstruct()
+        kwargs["dimensions"] = self.dimensions
+        return name, path, args, kwargs
+
+    def get_internal_type(self):
+        return "TextField"
+
+    def get_prep_value(self, value):
+        if value is None or isinstance(value, str):
+            return value
+        if isinstance(value, (list, tuple)):
+            if len(value) != self.dimensions:
+                raise ValidationError(
+                    f"Expected {self.dimensions} embedding dimensions, got {len(value)}."
+                )
+            return "[" + ",".join(str(float(item)) for item in value) + "]"
+        return str(value)
+
+
+class PostgresEnumField(models.CharField):
+    def __init__(self, *args, enum_type, **kwargs):
+        self.enum_type = enum_type
+        super().__init__(*args, **kwargs)
+
+    def db_type(self, connection):
+        return self.enum_type
+
+    def deconstruct(self):
+        name, path, args, kwargs = super().deconstruct()
+        kwargs["enum_type"] = self.enum_type
+        return name, path, args, kwargs
 
 
 class Tag(models.Model):
@@ -160,3 +216,101 @@ class SourceChunk(models.Model):
                 name="uq_source_chunks_document_chunk_index",
             )
         ]
+
+
+class ChunkEmbedding(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    source_chunk = models.ForeignKey(
+        SourceChunk,
+        on_delete=models.CASCADE,
+        related_name="embeddings",
+    )
+    embedding_model = models.CharField(max_length=100)
+    embedding_dim = models.IntegerField()
+    embedding = VectorField(dimensions=1536)
+    content_hash = models.CharField(max_length=64, blank=True, null=True)
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        db_table = "chunk_embeddings"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source_chunk", "embedding_model"],
+                name="uq_chunk_embeddings_source_chunk_model",
+            )
+        ]
+
+
+class WikiDocument(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    title = models.CharField(max_length=255)
+    slug = models.CharField(max_length=255, unique=True)
+    summary = models.TextField()
+    current_revision = models.ForeignKey(
+        "WikiRevision",
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="+",
+    )
+    status = PostgresEnumField(
+        max_length=20,
+        enum_type="wiki_document_status",
+        choices=WikiDocumentStatus.choices,
+        default=WikiDocumentStatus.PUBLISHED,
+    )
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "wiki_documents"
+
+    def __str__(self):
+        return self.title
+
+
+class WikiRevision(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    wiki_document = models.ForeignKey(
+        WikiDocument,
+        on_delete=models.CASCADE,
+        related_name="revisions",
+    )
+    revision_number = models.IntegerField()
+    content_markdown = models.TextField()
+    generation_type = PostgresEnumField(
+        max_length=20,
+        enum_type="wiki_generation_type",
+        choices=WikiGenerationType.choices,
+        default=WikiGenerationType.AI,
+    )
+    generation_model = models.CharField(max_length=100, blank=True, null=True)
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        db_table = "wiki_revisions"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["wiki_document", "revision_number"],
+                name="uq_wiki_revisions_document_revision",
+            )
+        ]
+
+
+class WikiRevisionSource(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    wiki_revision = models.ForeignKey(
+        WikiRevision,
+        on_delete=models.CASCADE,
+        related_name="sources",
+    )
+    source_chunk = models.ForeignKey(
+        SourceChunk,
+        on_delete=models.RESTRICT,
+        related_name="wiki_revision_sources",
+    )
+    evidence_text = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        db_table = "wiki_revision_sources"

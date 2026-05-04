@@ -5,6 +5,7 @@ from django.db import transaction
 from django.db.models import Count, Prefetch, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
@@ -13,7 +14,17 @@ from apps.accounts.models import HiveUser, OAuthAccount, UserRole, UserStatus
 from apps.accounts.services import purge_user_sessions
 
 from .forms import SourceForm, TagForm
-from .models import IngestionJob, Source, SourceDocument, Tag
+from .markdown_rendering import get_cached_revision_render
+from .models import (
+    IngestionJob,
+    Source,
+    SourceDocument,
+    Tag,
+    WikiDocument,
+    WikiDocumentStatus,
+)
+from .search import get_wiki_search_results
+from .wiki_markdown import strip_leading_title_heading
 
 logger = logging.getLogger(__name__)
 
@@ -109,24 +120,66 @@ def community_list(request):
     )
 
 
-@login_required
 def wiki_home(request):
+    query = request.GET.get("q", "").strip()
+    search_results = get_wiki_search_results(query=query, limit=8)
+    context = {
+        "page_heading": "Wiki",
+        "list_tags": LIST_TAGS,
+        "query": query,
+        "wiki_items": search_results["items"],
+        "wiki_result_count": search_results["total_count"],
+    }
+    if request.headers.get("HX-Request") == "true":
+        return render(request, "partials/wiki_search_results.html", context)
+
     return render(
         request,
         "pages/wiki/search_home.html",
+        context,
+    )
+
+
+def wiki_detail(request, slug):
+    document = get_object_or_404(
+        WikiDocument.objects.select_related("current_revision").filter(
+            current_revision__isnull=False
+        ),
+        slug=slug,
+        status=WikiDocumentStatus.PUBLISHED,
+    )
+    revision = document.current_revision
+    rendered_revision = get_cached_revision_render(
+        revision=revision, title=document.title
+    )
+    share_url = request.build_absolute_uri(
+        reverse("wiki_detail", kwargs={"slug": document.slug})
+    )
+    return render(
+        request,
+        "pages/wiki/detail.html",
         {
-            "page_heading": "Wiki",
-            "list_tags": LIST_TAGS,
-            "wiki_items": FEATURED_WIKI,
+            "page_heading": document.title,
+            "document": document,
+            "revision": revision,
+            "query": "",
+            "display_markdown": rendered_revision["display_markdown"],
+            "rendered_markdown": rendered_revision["rendered_markdown"],
+            "toc_items": rendered_revision["toc_items"],
+            "share_url": share_url,
+            "copy_human_text": _build_human_copy(document, revision, share_url),
+            "copy_agent_text": _build_agent_copy(document, revision, share_url),
         },
     )
 
 
 def integrated_search(request):
     query = request.GET.get("q", "").strip()
+    is_htmx_request = request.headers.get("HX-Request") == "true"
+    search_results = get_wiki_search_results(query=query, limit=16)
     template_name = (
-        "partials/search_results.html"
-        if request.headers.get("HX-Request") == "true"
+        "partials/global_search_results.html"
+        if is_htmx_request
         else "pages/search/results.html"
     )
     return render(
@@ -136,10 +189,52 @@ def integrated_search(request):
             "page_heading": "Search",
             "query": query,
             "list_tags": LIST_TAGS,
-            "wiki_items": FEATURED_WIKI,
-            "post_items": FEATURED_POSTS,
+            "wiki_items": search_results["items"],
+            "wiki_result_count": search_results["total_count"],
+            "show_blank_query_state": is_htmx_request and not query,
         },
     )
+
+
+def _build_human_copy(document, revision, share_url):
+    body = (
+        strip_leading_title_heading(revision.content_markdown, document.title).strip()
+        if revision
+        else ""
+    )
+    parts = [
+        document.title,
+        "",
+        document.summary.strip(),
+        "",
+        f"링크: {share_url}",
+    ]
+    if body:
+        parts.extend(["", body])
+    return "\n".join(parts).strip()
+
+
+def _build_agent_copy(document, revision, share_url):
+    body = (
+        strip_leading_title_heading(revision.content_markdown, document.title).strip()
+        if revision
+        else ""
+    )
+    lines = [
+        "wiki_context:",
+        f"  title: {document.title}",
+        f"  url: {share_url}",
+        "  summary: |",
+        *[f"    {line}" for line in document.summary.strip().splitlines()],
+    ]
+    if body:
+        lines.extend(
+            [
+                "content_markdown: |",
+                *[f"  {line}" for line in body.splitlines()],
+            ]
+        )
+    return "\n".join(lines).strip()
 
 
 @login_required

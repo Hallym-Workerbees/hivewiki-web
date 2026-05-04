@@ -41,5 +41,6 @@ urlpatterns = [
     ),
     path("community/", views.community_list, name="community_list"),
     path("wiki/", views.wiki_home, name="wiki_home"),
+    path("wiki/<slug:slug>/", views.wiki_detail, name="wiki_detail"),
     path("search/", views.integrated_search, name="integrated_search"),
 ]

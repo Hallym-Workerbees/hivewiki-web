@@ -4,12 +4,10 @@
 {% endblock title %}
 {% block app_content %}
     <section class="mx-auto max-w-7xl space-y-8">
-        {% include "partials/section_header.html" with eyebrow="Search" title="통합 검색 결과" description="문서와 게시글을 한 화면에서 비교할 수 있는 기본 결과 레이아웃입니다." %}
-        {% if query %}
-            <div class="rounded-2xl bg-surface-container-low px-5 py-4 text-sm text-on-surface-variant">
-                검색어: <span class="font-semibold text-on-surface">{{ query }}</span>
-            </div>
-        {% endif %}
-        {% include "partials/search_results.html" %}
+        {% include "partials/section_header.html" with eyebrow="Search" title="문서 검색" description="현재는 위키 문서를 기준으로 검색 결과를 보여줍니다." %}
+        <div class="max-w-3xl">
+            {% include "partials/search_bar.html" with placeholder="찾고 싶은 위키 문서를 검색하세요" action="/search/" value=query %}
+        </div>
+        {% include "partials/global_search_results.html" %}
     </section>
 {% endblock app_content %}

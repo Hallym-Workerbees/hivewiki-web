@@ -5,8 +5,8 @@ import time
 import uuid
 from datetime import UTC, datetime
 
+from asgiref.sync import iscoroutinefunction, markcoroutinefunction
 from django.conf import settings
-from django.utils.deprecation import MiddlewareMixin
 
 _request_context: contextvars.ContextVar[dict[str, object] | None] = (
     contextvars.ContextVar(
@@ -94,10 +94,16 @@ def _get_authenticated_user_id(request):
     return None
 
 
-class RequestLoggingMiddleware(MiddlewareMixin):
+class RequestLoggingMiddleware:
     logger = logging.getLogger("hivewiki.request")
 
-    def __call__(self, request):
+    def __init__(self, get_response):
+        self.get_response = get_response
+        self._async_mode = iscoroutinefunction(get_response)
+        if self._async_mode:
+            markcoroutinefunction(self)
+
+    def _begin_request(self, request):
         started_at = time.perf_counter()
         request_context_token = begin_request_context()
         request_id = str(uuid.uuid4())
@@ -114,24 +120,60 @@ class RequestLoggingMiddleware(MiddlewareMixin):
             user_id=user_id,
             remote_addr=remote_addr,
         )
+        return started_at, request_context_token, request_id
+
+    def _log_exception(self, started_at):
+        duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+        set_request_context(status_code=500, duration_ms=duration_ms)
+        self.logger.exception("request_failed")
+
+    def _log_response(self, request, response, started_at, request_id):
+        duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+        user_id = _get_authenticated_user_id(request)
+        set_request_context(
+            status_code=response.status_code,
+            duration_ms=duration_ms,
+            user_id=user_id,
+        )
+        self.logger.info("request_complete")
+        response["X-Request-ID"] = request_id
+        return response
+
+    def __call__(self, request):
+        if self._async_mode:
+            return self.__acall__(request)
+
+        started_at, request_context_token, request_id = self._begin_request(request)
 
         try:
             response = self.get_response(request)
         except Exception:
-            duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
-            set_request_context(status_code=500, duration_ms=duration_ms)
-            self.logger.exception("request_failed")
+            self._log_exception(started_at)
             raise
         else:
-            duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
-            user_id = _get_authenticated_user_id(request)
-            set_request_context(
-                status_code=response.status_code,
-                duration_ms=duration_ms,
-                user_id=user_id,
+            return self._log_response(
+                request=request,
+                response=response,
+                started_at=started_at,
+                request_id=request_id,
             )
-            self.logger.info("request_complete")
-            response["X-Request-ID"] = request_id
-            return response
+        finally:
+            _request_context.reset(request_context_token)
+
+    async def __acall__(self, request):
+        started_at, request_context_token, request_id = self._begin_request(request)
+
+        try:
+            response = await self.get_response(request)
+        except Exception:
+            self._log_exception(started_at)
+            raise
+        else:
+            return self._log_response(
+                request=request,
+                response=response,
+                started_at=started_at,
+                request_id=request_id,
+            )
         finally:
             _request_context.reset(request_context_token)

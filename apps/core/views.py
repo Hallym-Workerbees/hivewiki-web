@@ -20,9 +20,11 @@ from .forms import CommentForm, PostForm, SourceForm, TagForm
 from .markdown_rendering import get_cached_revision_render
 from .models import (
     Comment,
+    CommentLike,
     CommentStatus,
     IngestionJob,
     Post,
+    PostLike,
     PostStatus,
     Source,
     SourceDocument,
@@ -286,6 +288,7 @@ def community_detail(request, post_id):
         _build_community_detail_context(
             post=post,
             comment_form=comment_form,
+            current_user=request.current_user,
         ),
     )
 
@@ -317,9 +320,39 @@ def community_post_edit(request, post_id):
             comment_form=comment_form,
             post_edit_form=post_edit_form,
             editing_post=True,
+            current_user=request.current_user,
         ),
         status=200,
     )
+
+
+@login_required
+@require_POST
+def community_post_like_toggle(request, post_id):
+    post = get_object_or_404(
+        _community_visible_posts_queryset(user=request.current_user), pk=post_id
+    )
+    like = PostLike.objects.filter(post=post, user=request.current_user)
+    if like.exists():
+        like.delete()
+    else:
+        PostLike.objects.create(post=post, user=request.current_user)
+    post.like_count = PostLike.objects.filter(post=post).count()
+    post.is_liked_by_current_user = PostLike.objects.filter(
+        post=post,
+        user=request.current_user,
+    ).exists()
+    if request.headers.get("HX-Request") == "true":
+        return render(
+            request,
+            "partials/community_post_like_button.html",
+            {
+                "post": post,
+                "current_user": request.current_user,
+                "htmx_enabled": True,
+            },
+        )
+    return redirect(request.POST.get("next") or post.get_absolute_url())
 
 
 @login_required
@@ -355,8 +388,45 @@ def community_comment_create(request, post_id):
             post=post,
             comment_form=comment_form,
             reply_target_id=parent_comment_id,
+            current_user=request.current_user,
         ),
         status=200,
+    )
+
+
+@login_required
+@require_POST
+def community_comment_like_toggle(request, post_id, comment_id):
+    post = get_object_or_404(
+        _community_visible_posts_queryset(user=request.current_user), pk=post_id
+    )
+    comment = get_object_or_404(
+        Comment.objects.filter(post=post, status=CommentStatus.PUBLISHED),
+        pk=comment_id,
+    )
+    like = CommentLike.objects.filter(comment=comment, user=request.current_user)
+    if like.exists():
+        like.delete()
+    else:
+        CommentLike.objects.create(comment=comment, user=request.current_user)
+    comment.like_count = CommentLike.objects.filter(comment=comment).count()
+    comment.is_liked_by_current_user = CommentLike.objects.filter(
+        comment=comment,
+        user=request.current_user,
+    ).exists()
+    if request.headers.get("HX-Request") == "true":
+        return render(
+            request,
+            "partials/community_comment_like_button.html",
+            {
+                "post": post,
+                "comment": comment,
+                "current_user": request.current_user,
+                "htmx_enabled": True,
+            },
+        )
+    return redirect(
+        request.POST.get("next") or f"{post.get_absolute_url()}#comment-{comment.pk}"
     )
 
 
@@ -398,6 +468,7 @@ def community_comment_edit(request, post_id, comment_id):
             comment_form=CommentForm(initial={"parent_comment_id": ""}),
             editing_comment_id=str(comment.pk),
             comment_edit_form=comment_edit_form,
+            current_user=request.current_user,
         ),
         status=200,
     )
@@ -411,12 +482,17 @@ def community_comment_children(request, post_id, comment_id):
         Comment.objects.filter(post=post, status=CommentStatus.PUBLISHED),
         pk=comment_id,
     )
+    comments = _get_child_comments(parent_comment)
+    _mark_liked_comments(
+        comments,
+        _get_liked_comment_ids(request.current_user, comments),
+    )
     return render(
         request,
         "partials/community_comment_children.html",
         {
             "post": post,
-            "comments": _get_child_comments(parent_comment),
+            "comments": comments,
             "comment_form": CommentForm(),
             "reply_target_id": "",
             "expanded_comment_ids": set(),
@@ -669,7 +745,8 @@ def _community_visible_posts_queryset(
                 "comments",
                 filter=Q(comments__status=CommentStatus.PUBLISHED),
                 distinct=True,
-            )
+            ),
+            like_count=Count("post_likes__user", distinct=True),
         )
         .order_by("-created_at", "-id")
     )
@@ -688,7 +765,8 @@ def _community_hot_posts_queryset():
                 "comments",
                 filter=Q(comments__status=CommentStatus.PUBLISHED),
                 distinct=True,
-            )
+            ),
+            like_count=Count("post_likes__user", distinct=True),
         )
         .order_by("-comment_count", "-created_at", "-id")
     )
@@ -818,10 +896,55 @@ def _get_user_draft_post(user, draft_post_id):
     return _community_user_draft_queryset(user).filter(pk=draft_post_id).first()
 
 
+def _get_liked_post_ids(user, posts):
+    if user is None:
+        return set()
+    post_ids = [post.pk for post in posts]
+    if not post_ids:
+        return set()
+    return {
+        str(post_id)
+        for post_id in PostLike.objects.filter(
+            user=user,
+            post_id__in=post_ids,
+        ).values_list("post_id", flat=True)
+    }
+
+
+def _collect_comment_ids(comments):
+    comment_ids = []
+    for comment in comments:
+        comment_ids.append(comment.pk)
+        comment_ids.extend(_collect_comment_ids(getattr(comment, "child_comments", [])))
+    return comment_ids
+
+
+def _mark_liked_comments(comments, liked_comment_ids):
+    for comment in comments:
+        comment.is_liked_by_current_user = str(comment.pk) in liked_comment_ids
+        _mark_liked_comments(getattr(comment, "child_comments", []), liked_comment_ids)
+
+
+def _get_liked_comment_ids(user, comments):
+    if user is None:
+        return set()
+    comment_ids = _collect_comment_ids(comments)
+    if not comment_ids:
+        return set()
+    return {
+        str(comment_id)
+        for comment_id in CommentLike.objects.filter(
+            user=user,
+            comment_id__in=comment_ids,
+        ).values_list("comment_id", flat=True)
+    }
+
+
 def _build_community_detail_context(
     *,
     post,
     comment_form,
+    current_user,
     reply_target_id="",
     post_edit_form=None,
     editing_post=False,
@@ -836,6 +959,10 @@ def _build_community_detail_context(
     else:
         comments = _get_top_level_comments(post)
     linked_wiki_documents = _get_wiki_documents_for_post(post)
+    liked_post_ids = _get_liked_post_ids(current_user, [post])
+    liked_comment_ids = _get_liked_comment_ids(current_user, comments)
+    post.is_liked_by_current_user = str(post.pk) in liked_post_ids
+    _mark_liked_comments(comments, liked_comment_ids)
     related_posts = list(
         _community_hot_posts_queryset().exclude(pk=post.pk).filter(~Q(pk=post.pk))[:4]
     )
@@ -868,6 +995,7 @@ def _build_community_detail_context(
     return {
         "page_heading": "Community",
         "post": post,
+        "current_user": current_user,
         "comment_form": comment_form,
         "comments": comments,
         "comment_total_count": comment_total_count,
@@ -961,11 +1089,12 @@ def _get_child_comments(parent_comment):
 
 def _comment_queryset():
     return Comment.objects.select_related("author_user").annotate(
+        like_count=Count("comment_likes__user", distinct=True),
         child_comment_count=Count(
             "replies",
             filter=Q(replies__status=CommentStatus.PUBLISHED),
             distinct=True,
-        )
+        ),
     )
 
 

@@ -47,9 +47,19 @@ urlpatterns = [
         name="community_post_edit",
     ),
     path(
+        "community/<uuid:post_id>/like/",
+        views.community_post_like_toggle,
+        name="community_post_like_toggle",
+    ),
+    path(
         "community/<uuid:post_id>/comments/",
         views.community_comment_create,
         name="community_comment_create",
+    ),
+    path(
+        "community/<uuid:post_id>/comments/<uuid:comment_id>/like/",
+        views.community_comment_like_toggle,
+        name="community_comment_like_toggle",
     ),
     path(
         "community/<uuid:post_id>/comments/<uuid:comment_id>/edit/",

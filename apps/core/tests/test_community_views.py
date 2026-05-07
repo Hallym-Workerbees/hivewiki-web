@@ -3,7 +3,14 @@ from django.utils import timezone
 
 from apps.accounts.models import HiveUser, UserStatus
 from apps.accounts.services import SESSION_USER_ID_KEY
-from apps.core.models import Comment, CommentStatus, Post, PostStatus
+from apps.core.models import (
+    Comment,
+    CommentLike,
+    CommentStatus,
+    Post,
+    PostLike,
+    PostStatus,
+)
 from apps.core.views import _community_visible_posts_queryset
 
 
@@ -233,3 +240,48 @@ class CommunityViewTests(TestCase):
         self.assertContains(list_response, "공개 게시글")
         self.assertNotContains(list_response, "임시 게시글")
         self.assertContains(detail_response, "로그인하고 댓글 쓰기")
+
+    def test_user_can_toggle_post_like(self):
+        post = Post.objects.create(
+            author_user=self.other_user,
+            content_markdown="좋아요 테스트 글",
+            status=PostStatus.PUBLISHED,
+        )
+
+        like_response = self.client.post(
+            f"/community/{post.id}/like/",
+            {"next": f"/community/{post.id}/"},
+        )
+        self.assertRedirects(like_response, f"/community/{post.id}/")
+        self.assertTrue(PostLike.objects.filter(post=post, user=self.user).exists())
+
+        unlike_response = self.client.post(
+            f"/community/{post.id}/like/",
+            {"next": f"/community/{post.id}/"},
+        )
+        self.assertRedirects(unlike_response, f"/community/{post.id}/")
+        self.assertFalse(PostLike.objects.filter(post=post, user=self.user).exists())
+
+    def test_user_can_toggle_comment_like(self):
+        post = Post.objects.create(
+            author_user=self.other_user,
+            content_markdown="댓글 좋아요 테스트 글",
+            status=PostStatus.PUBLISHED,
+        )
+        comment = Comment.objects.create(
+            post=post,
+            author_user=self.other_user,
+            content="좋아요 받을 댓글",
+            status=CommentStatus.PUBLISHED,
+        )
+
+        like_response = self.client.post(
+            f"/community/{post.id}/comments/{comment.id}/like/",
+            {"next": f"/community/{post.id}/#comment-{comment.id}"},
+        )
+        self.assertRedirects(
+            like_response, f"/community/{post.id}/#comment-{comment.id}"
+        )
+        self.assertTrue(
+            CommentLike.objects.filter(comment=comment, user=self.user).exists()
+        )

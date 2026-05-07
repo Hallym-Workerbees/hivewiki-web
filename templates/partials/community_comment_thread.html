@@ -51,6 +51,9 @@
             {{ comment.content|render_markdown }}
         </div>
     {% endif %}
+    <div class="mt-4 flex items-center gap-3">
+        {% include "partials/community_comment_like_button.html" with htmx_enabled=True %}
+    </div>
     {% if current_user %}
         <details class="mt-4 rounded-[1.25rem] bg-surface-container-high p-4"
                  {% if comment.id|stringformat:"s" in expanded_comment_ids or reply_target_id == comment.id|stringformat:"s" %}open{% endif %}>

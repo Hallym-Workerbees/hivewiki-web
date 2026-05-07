@@ -2,13 +2,22 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
+from apps.accounts.models import HiveUser, UserStatus
 from apps.core.models import (
     ChunkEmbedding,
+    Comment,
+    CommentStatus,
+    Post,
+    PostStatus,
+    PostTag,
+    PostWikiDocument,
     Source,
     SourceChunk,
     SourceDocument,
     SourceDocumentFetchStatus,
     SourceDocumentWikiStatus,
+    Tag,
+    TagType,
     WikiDocument,
     WikiDocumentStatus,
     WikiGenerationType,
@@ -279,6 +288,113 @@ confidence = \frac{verified\_sources}{all\_claims}
     },
 ]
 
+SEED_COMMUNITY_POSTS = [
+    {
+        "author": {
+            "username": "ops_lead",
+            "email": "ops.lead@local.hivewiki.test",
+        },
+        "lookup_key": "검색 첫 화면에서 위키와 커뮤니티 비중을 어떻게 가져가면 좋을지 의견 받고 싶습니다.",
+        "content_markdown": (
+            "검색 첫 화면에서 위키와 커뮤니티 비중을 어떻게 가져가면 좋을지 의견 받고 싶습니다.\n\n"
+            "지금은 최신 문서와 최신 질문이 같이 보여야 한다는 쪽과, "
+            "위키를 먼저 보여주고 커뮤니티는 보조로 두자는 쪽이 갈리고 있습니다.\n\n"
+            "처음 들어오는 사용자 기준으로 어떤 정보가 먼저 보여야 하는지 사례가 있으면 같이 남겨 주세요."
+        ),
+        "status": PostStatus.PUBLISHED,
+        "tags": ["검색", "UX", "온보딩"],
+        "wiki_slugs": ["capstone-wiki-guide"],
+        "comments": [
+            {
+                "author": {
+                    "username": "product_jane",
+                    "email": "product.jane@local.hivewiki.test",
+                },
+                "content": (
+                    "온보딩 사용자는 위키를 먼저 보게 하고, 최근 질문은 두세 개만 아래에 붙이는 쪽이 더 안정적일 것 같습니다."
+                ),
+            },
+            {
+                "author": {
+                    "username": "design_minu",
+                    "email": "design.minu@local.hivewiki.test",
+                },
+                "content": (
+                    "질문 흐름이 살아 있어야 서비스가 비어 보이지 않습니다. 대신 카드 밀도는 지금보다 낮추는 쪽이 좋겠습니다."
+                ),
+            },
+        ],
+    },
+    {
+        "author": {
+            "username": "product_jane",
+            "email": "product.jane@local.hivewiki.test",
+        },
+        "lookup_key": "반복되는 운영 질문을 바로 위키로 넘기기 전에",
+        "content_markdown": (
+            "반복되는 운영 질문을 바로 위키로 넘기기 전에, 커뮤니티에서 어느 정도 합의가 쌓였는지 판단하는 기준이 필요해 보입니다.\n\n"
+            "- 답변이 한 사람 의견에만 의존하지 않는지\n"
+            "- 다음 분기에도 유효한 내용인지\n"
+            "- 링크 하나로 재사용 가능한지\n\n"
+            "팀에서 실제로 보는 체크포인트가 있으면 적어 주세요."
+        ),
+        "status": PostStatus.PUBLISHED,
+        "tags": ["운영", "문서화"],
+        "wiki_slugs": ["community-to-wiki-criteria"],
+        "comments": [
+            {
+                "author": {
+                    "username": "ops_lead",
+                    "email": "ops.lead@local.hivewiki.test",
+                },
+                "content": (
+                    "저는 최소 두 번 이상 반복된 질문인지부터 봅니다. 그다음에 답변이 바뀔 가능성이 큰지 확인합니다."
+                ),
+            }
+        ],
+    },
+    {
+        "author": {
+            "username": "design_minu",
+            "email": "design.minu@local.hivewiki.test",
+        },
+        "lookup_key": "커뮤니티 피드를 제목 없이 운영하는 방향이 더 맞아 보입니다.",
+        "content_markdown": (
+            "커뮤니티 피드를 제목 없이 운영하는 방향이 더 맞아 보입니다.\n\n"
+            "짧은 맥락을 바로 읽을 수 있어야 흐름이 끊기지 않고, "
+            "태그와 작성자만으로도 대부분의 분류는 가능하다고 생각합니다.\n\n"
+            "다만 본문 첫 2~3줄만 보이게 할지, 조금 더 길게 보여줄지는 한 번 비교가 필요합니다."
+        ),
+        "status": PostStatus.PUBLISHED,
+        "tags": ["커뮤니티", "피드", "UI"],
+        "wiki_slugs": [],
+        "comments": [
+            {
+                "author": {
+                    "username": "product_jane",
+                    "email": "product.jane@local.hivewiki.test",
+                },
+                "content": "모바일에서는 3줄 정도, 데스크톱에서는 4~5줄 정도가 적당해 보입니다.",
+            }
+        ],
+    },
+    {
+        "author": {
+            "username": "campus_ari",
+            "email": "campus.ari@local.hivewiki.test",
+        },
+        "lookup_key": "다음 주 온보딩 세션 전에 꼭 문서화해야 할 질문을 모아두는 임시 글입니다.",
+        "content_markdown": (
+            "다음 주 온보딩 세션 전에 꼭 문서화해야 할 질문을 모아두는 임시 글입니다.\n\n"
+            "아직 정리 전이라 draft로 두고, 코멘트로 필요한 주제만 빠르게 붙여 주세요."
+        ),
+        "status": PostStatus.DRAFT,
+        "tags": ["온보딩", "임시정리"],
+        "wiki_slugs": [],
+        "comments": [],
+    },
+]
+
 
 class Command(BaseCommand):
     help = "Seed local wiki data into the current database."
@@ -297,6 +413,10 @@ class Command(BaseCommand):
         seeded_revisions = 0
         seeded_sources = 0
         seeded_embeddings = 0
+        seeded_posts = 0
+        seeded_comments = 0
+        seeded_tags = 0
+        seeded_users = 0
 
         for seed in SEED_DOCUMENTS:
             source, _ = Source.objects.update_or_create(
@@ -391,13 +511,82 @@ class Command(BaseCommand):
                 )
                 seeded_sources += 1
 
+        for seed in SEED_COMMUNITY_POSTS:
+            author, author_created = self._get_or_create_seed_user(seed["author"])
+            if author_created:
+                seeded_users += 1
+
+            post = Post.objects.filter(
+                author_user=author,
+                content_markdown__contains=seed["lookup_key"],
+            ).first()
+            if post is None:
+                post = Post.objects.create(
+                    author_user=author,
+                    content_markdown=seed["content_markdown"],
+                    status=seed["status"],
+                )
+            else:
+                post.content_markdown = seed["content_markdown"]
+                post.status = seed["status"]
+                post.updated_at = timezone.now()
+                post.save(update_fields=["content_markdown", "status", "updated_at"])
+            seeded_posts += 1
+
+            tag_ids = []
+            for tag_name in seed["tags"]:
+                tag, tag_created = self._get_or_create_seed_tag(tag_name)
+                if tag_created:
+                    seeded_tags += 1
+                tag_ids.append(tag.id)
+                PostTag.objects.get_or_create(post=post, tag=tag)
+
+            PostTag.objects.filter(post=post).exclude(tag_id__in=tag_ids).delete()
+
+            wiki_document_ids = list(
+                WikiDocument.objects.filter(
+                    slug__in=seed["wiki_slugs"],
+                    status=WikiDocumentStatus.PUBLISHED,
+                    current_revision__isnull=False,
+                ).values_list("id", flat=True)
+            )
+            PostWikiDocument.objects.filter(post=post).exclude(
+                wiki_document_id__in=wiki_document_ids
+            ).delete()
+            for wiki_document_id in wiki_document_ids:
+                PostWikiDocument.objects.get_or_create(
+                    post=post, wiki_document_id=wiki_document_id
+                )
+
+            for comment_seed in seed["comments"]:
+                comment_author, comment_author_created = self._get_or_create_seed_user(
+                    comment_seed["author"]
+                )
+                if comment_author_created:
+                    seeded_users += 1
+
+                Comment.objects.update_or_create(
+                    post=post,
+                    author_user=comment_author,
+                    content=comment_seed["content"],
+                    defaults={
+                        "status": CommentStatus.PUBLISHED,
+                        "updated_at": timezone.now(),
+                    },
+                )
+                seeded_comments += 1
+
         self.stdout.write(
             self.style.SUCCESS(
                 "Seed complete: "
                 f"{seeded_documents} wiki documents, "
                 f"{seeded_revisions} revisions, "
                 f"{seeded_sources} revision sources, "
-                f"{seeded_embeddings} embeddings."
+                f"{seeded_embeddings} embeddings, "
+                f"{seeded_users} users, "
+                f"{seeded_tags} tags, "
+                f"{seeded_posts} posts, "
+                f"{seeded_comments} comments."
             )
         )
         if not use_mock_embeddings:
@@ -416,3 +605,44 @@ class Command(BaseCommand):
         import hashlib
 
         return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    def _get_or_create_seed_user(self, seed_user):
+        user, created = HiveUser.objects.get_or_create(
+            email=seed_user["email"],
+            defaults={
+                "username": seed_user["username"],
+                "status": UserStatus.ACTIVE,
+            },
+        )
+        if not created:
+            updates = []
+            if user.username != seed_user["username"]:
+                user.username = seed_user["username"]
+                updates.append("username")
+            if user.status != UserStatus.ACTIVE:
+                user.status = UserStatus.ACTIVE
+                updates.append("status")
+            if updates:
+                updates.append("updated_at")
+                user.save(update_fields=updates)
+        return user, created
+
+    def _get_or_create_seed_tag(self, tag_name):
+        tag, created = Tag.objects.get_or_create(
+            slug=tag_name,
+            defaults={
+                "name": tag_name,
+                "tag_type": TagType.USER,
+            },
+        )
+        if not created:
+            updates = []
+            if tag.name != tag_name:
+                tag.name = tag_name
+                updates.append("name")
+            if tag.tag_type != TagType.USER:
+                tag.tag_type = TagType.USER
+                updates.append("tag_type")
+            if updates:
+                tag.save(update_fields=updates)
+        return tag, created

@@ -4,10 +4,27 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
+from .community_content import (
+    build_post_excerpt,
+    extract_post_title_and_body,
+    strip_post_leading_title,
+)
+
 
 class TagType(models.TextChoices):
     USER = "user", "User"
     SYSTEM = "system", "System"
+
+
+class PostStatus(models.TextChoices):
+    PUBLISHED = "published", "Published"
+    DRAFT = "draft", "Draft"
+    DELETED = "deleted", "Deleted"
+
+
+class CommentStatus(models.TextChoices):
+    PUBLISHED = "published", "Published"
+    DELETED = "deleted", "Deleted"
 
 
 class IngestionJobStatus(models.TextChoices):
@@ -89,8 +106,9 @@ class Tag(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=50)
     slug = models.CharField(max_length=50, unique=True)
-    tag_type = models.CharField(
+    tag_type = PostgresEnumField(
         max_length=20,
+        enum_type="tag_type",
         choices=TagType.choices,
         default=TagType.USER,
     )
@@ -102,6 +120,201 @@ class Tag(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class Post(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    author_user = models.ForeignKey(
+        "accounts.HiveUser",
+        on_delete=models.SET_NULL,
+        related_name="posts",
+        db_column="author_user_id",
+        blank=True,
+        null=True,
+    )
+    content_markdown = models.TextField()
+    status = PostgresEnumField(
+        max_length=20,
+        enum_type="post_status",
+        choices=PostStatus.choices,
+        default=PostStatus.PUBLISHED,
+    )
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+    updated_at = models.DateTimeField(default=timezone.now)
+    likes = models.ManyToManyField(
+        "accounts.HiveUser",
+        through="PostLike",
+        related_name="liked_posts",
+    )
+    tags = models.ManyToManyField(
+        Tag,
+        through="PostTag",
+        related_name="posts",
+    )
+    wiki_documents = models.ManyToManyField(
+        "WikiDocument",
+        through="PostWikiDocument",
+        related_name="community_posts",
+    )
+
+    class Meta:
+        db_table = "posts"
+
+    def __str__(self):
+        return self.summary or str(self.pk)
+
+    def get_absolute_url(self):
+        from django.urls import reverse
+
+        return reverse("community_detail", kwargs={"post_id": self.pk})
+
+    @property
+    def title(self) -> str:
+        title, _ = extract_post_title_and_body(self.content_markdown)
+        return title
+
+    @property
+    def body_markdown(self) -> str:
+        return strip_post_leading_title(self.content_markdown)
+
+    @property
+    def summary(self) -> str:
+        return build_post_excerpt(self.content_markdown)
+
+    @property
+    def url(self) -> str:
+        return self.get_absolute_url()
+
+    @property
+    def author(self) -> str:
+        return self.author_user.username if self.author_user else "익명 사용자"
+
+
+class PostLike(models.Model):
+    pk = models.CompositePrimaryKey("post", "user")
+    post = models.ForeignKey(
+        Post,
+        on_delete=models.CASCADE,
+        related_name="post_likes",
+        db_column="post_id",
+    )
+    user = models.ForeignKey(
+        "accounts.HiveUser",
+        on_delete=models.CASCADE,
+        related_name="post_likes",
+        db_column="user_id",
+    )
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        db_table = "post_likes"
+
+
+class Comment(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    post = models.ForeignKey(
+        Post,
+        on_delete=models.CASCADE,
+        related_name="comments",
+        db_column="post_id",
+    )
+    author_user = models.ForeignKey(
+        "accounts.HiveUser",
+        on_delete=models.SET_NULL,
+        related_name="comments",
+        db_column="author_user_id",
+        blank=True,
+        null=True,
+    )
+    parent_comment = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        related_name="replies",
+        db_column="parent_comment_id",
+        blank=True,
+        null=True,
+    )
+    content = models.TextField(blank=True, null=True)
+    status = PostgresEnumField(
+        max_length=20,
+        enum_type="comment_status",
+        choices=CommentStatus.choices,
+        default=CommentStatus.PUBLISHED,
+    )
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+    updated_at = models.DateTimeField(default=timezone.now)
+    deleted_at = models.DateTimeField(blank=True, null=True)
+    likes = models.ManyToManyField(
+        "accounts.HiveUser",
+        through="CommentLike",
+        related_name="liked_comments",
+    )
+
+    class Meta:
+        db_table = "comments"
+
+    def __str__(self):
+        return f"Comment<{self.pk}>"
+
+
+class CommentLike(models.Model):
+    pk = models.CompositePrimaryKey("comment", "user")
+    comment = models.ForeignKey(
+        Comment,
+        on_delete=models.CASCADE,
+        related_name="comment_likes",
+        db_column="comment_id",
+    )
+    user = models.ForeignKey(
+        "accounts.HiveUser",
+        on_delete=models.CASCADE,
+        related_name="comment_likes",
+        db_column="user_id",
+    )
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        db_table = "comment_likes"
+
+
+class PostTag(models.Model):
+    pk = models.CompositePrimaryKey("post", "tag")
+    post = models.ForeignKey(
+        Post,
+        on_delete=models.CASCADE,
+        related_name="post_tags",
+        db_column="post_id",
+    )
+    tag = models.ForeignKey(
+        Tag,
+        on_delete=models.CASCADE,
+        related_name="post_tags",
+        db_column="tag_id",
+    )
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        db_table = "post_tags"
+
+
+class PostWikiDocument(models.Model):
+    pk = models.CompositePrimaryKey("post", "wiki_document")
+    post = models.ForeignKey(
+        Post,
+        on_delete=models.CASCADE,
+        related_name="post_wiki_documents",
+        db_column="post_id",
+    )
+    wiki_document = models.ForeignKey(
+        "WikiDocument",
+        on_delete=models.CASCADE,
+        related_name="post_wiki_documents",
+        db_column="wiki_document_id",
+    )
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        db_table = "post_wiki_documents"
 
 
 class Source(models.Model):

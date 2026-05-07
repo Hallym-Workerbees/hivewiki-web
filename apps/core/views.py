@@ -1,6 +1,8 @@
 import logging
+from urllib.parse import urlencode
 
 from django.contrib import messages
+from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Count, Prefetch, Q
 from django.http import HttpResponse
@@ -13,10 +15,15 @@ from apps.accounts.decorators import admin_required, login_required
 from apps.accounts.models import HiveUser, OAuthAccount, UserRole, UserStatus
 from apps.accounts.services import purge_user_sessions
 
-from .forms import SourceForm, TagForm
+from .community_content import extract_linked_wiki_slugs
+from .forms import CommentForm, PostForm, SourceForm, TagForm
 from .markdown_rendering import get_cached_revision_render
 from .models import (
+    Comment,
+    CommentStatus,
     IngestionJob,
+    Post,
+    PostStatus,
     Source,
     SourceDocument,
     Tag,
@@ -27,6 +34,7 @@ from .search import get_wiki_search_results
 from .wiki_markdown import strip_leading_title_heading
 
 logger = logging.getLogger(__name__)
+COMMUNITY_FEED_PAGE_SIZE = 10
 
 ADMIN_USER_ACTIONS = frozenset(
     {
@@ -82,19 +90,23 @@ FEATURED_POSTS = [
 
 
 def public_main(request):
+    featured_posts = list(_community_visible_posts_queryset(user=None)[:1])
     return render(
         request,
         "pages/home/public_main.html",
         {
             "list_tags": LIST_TAGS,
             "featured_wiki": FEATURED_WIKI[0],
-            "featured_post": FEATURED_POSTS[0],
+            "featured_post": featured_posts[0] if featured_posts else FEATURED_POSTS[0],
         },
     )
 
 
 @login_required
 def dashboard(request):
+    recent_posts = list(
+        _community_visible_posts_queryset(user=request.current_user)[:2]
+    )
     return render(
         request,
         "pages/home/dashboard.html",
@@ -102,20 +114,187 @@ def dashboard(request):
             "page_heading": "Dashboard",
             "list_tags": LIST_TAGS,
             "wiki_items": FEATURED_WIKI,
-            "post_items": FEATURED_POSTS,
+            "post_items": recent_posts or FEATURED_POSTS,
         },
     )
 
 
 @login_required
 def community_list(request):
+    selected_tag_slug = request.GET.get("tag", "").strip()
+    page_number = request.GET.get("page", "1").strip() or "1"
+    source_wiki_slug = request.GET.get("wiki_slug", "").strip()
+    compose_requested = request.GET.get("compose") == "1" or request.method == "POST"
+    prefilled_wiki_document = None
+    initial_form_data = None
+    wiki_document_queryset = _community_wiki_document_queryset()
+    if request.method == "GET" and source_wiki_slug:
+        prefilled_wiki_document = wiki_document_queryset.filter(
+            slug=source_wiki_slug
+        ).first()
+        if prefilled_wiki_document is not None:
+            initial_form_data = {
+                "wiki_documents": [prefilled_wiki_document.pk],
+            }
+
+    post_form = PostForm(
+        request.POST or None,
+        initial=initial_form_data,
+        wiki_document_queryset=wiki_document_queryset,
+    )
+    if request.method == "POST" and post_form.is_valid():
+        post = post_form.save(author_user=request.current_user)
+        messages.success(request, "게시글을 저장했습니다.")
+        return redirect(post.get_absolute_url())
+
+    post_page = _paginate_community_posts(
+        _community_visible_posts_queryset(
+            user=request.current_user,
+            selected_tag_slug=selected_tag_slug,
+        ),
+        page_number=page_number,
+    )
+    post_items = list(post_page.object_list)
+    _attach_linked_wiki_documents(post_items)
+    hot_posts = list(_community_hot_posts_queryset()[:5])
+    _attach_linked_wiki_documents(hot_posts)
+    next_feed_page_url = (
+        _build_community_feed_url(
+            page=post_page.next_page_number(),
+            selected_tag_slug=selected_tag_slug,
+        )
+        if post_page.has_next()
+        else ""
+    )
+
+    if request.headers.get("HX-Request") == "true":
+        return render(
+            request,
+            "partials/community_feed_page.html",
+            {
+                "page_obj": post_page,
+                "post_items": post_items,
+                "next_feed_page_url": next_feed_page_url,
+                "list_tags": LIST_TAGS,
+            },
+        )
+
+    featured_wiki_documents = list(wiki_document_queryset[:6])
+    if prefilled_wiki_document is not None and all(
+        document.pk != prefilled_wiki_document.pk
+        for document in featured_wiki_documents
+    ):
+        featured_wiki_documents = [
+            prefilled_wiki_document,
+            *featured_wiki_documents[:5],
+        ]
+
     return render(
         request,
         "pages/community/list.html",
         {
             "page_heading": "Community",
             "list_tags": LIST_TAGS,
-            "post_items": FEATURED_POSTS,
+            "post_form": post_form,
+            "page_obj": post_page,
+            "post_items": post_items,
+            "next_feed_page_url": next_feed_page_url,
+            "hot_posts": hot_posts,
+            "tag_options": list(_community_tag_queryset()[:12]),
+            "selected_tag_slug": selected_tag_slug,
+            "compose_requested": compose_requested,
+            "prefilled_wiki_document": prefilled_wiki_document,
+            "featured_wiki_documents": featured_wiki_documents,
+            "selected_wiki_document_ids": [
+                str(document_id)
+                for document_id in (post_form["wiki_documents"].value() or [])
+            ],
+            "compose_open_url": _build_community_list_url(
+                compose=True,
+                selected_tag_slug=selected_tag_slug,
+                source_wiki_slug=source_wiki_slug,
+            ),
+            "compose_close_url": _build_community_list_url(
+                compose=False,
+                selected_tag_slug=selected_tag_slug,
+            ),
+        },
+    )
+
+
+@login_required
+def community_detail(request, post_id):
+    post = get_object_or_404(
+        _community_visible_posts_queryset(user=request.current_user), pk=post_id
+    )
+    comment_form = CommentForm(initial={"parent_comment_id": ""})
+    return render(
+        request,
+        "pages/community/detail.html",
+        _build_community_detail_context(
+            post=post,
+            comment_form=comment_form,
+        ),
+    )
+
+
+@login_required
+@require_POST
+def community_comment_create(request, post_id):
+    post = get_object_or_404(
+        _community_visible_posts_queryset(user=request.current_user), pk=post_id
+    )
+    comment_form = CommentForm(request.POST)
+    parent_comment = None
+    parent_comment_id = request.POST.get("parent_comment_id", "").strip()
+    if parent_comment_id:
+        parent_comment = get_object_or_404(
+            Comment.objects.filter(
+                post=post,
+                status=CommentStatus.PUBLISHED,
+            ),
+            pk=parent_comment_id,
+        )
+    if comment_form.is_valid():
+        comment_form.save(
+            post=post,
+            author_user=request.current_user,
+            parent_comment=parent_comment,
+        )
+        messages.success(request, "댓글을 등록했습니다.")
+        return redirect(f"{post.get_absolute_url()}#comment-list")
+
+    return render(
+        request,
+        "pages/community/detail.html",
+        _build_community_detail_context(
+            post=post,
+            comment_form=comment_form,
+            reply_target_id=parent_comment_id,
+        ),
+        status=200,
+    )
+
+
+@login_required
+def community_comment_children(request, post_id, comment_id):
+    post = get_object_or_404(
+        _community_visible_posts_queryset(user=request.current_user), pk=post_id
+    )
+    parent_comment = get_object_or_404(
+        Comment.objects.filter(post=post, status=CommentStatus.PUBLISHED),
+        pk=comment_id,
+    )
+    return render(
+        request,
+        "partials/community_comment_children.html",
+        {
+            "post": post,
+            "comments": _get_child_comments(parent_comment),
+            "comment_form": CommentForm(),
+            "reply_target_id": "",
+            "expanded_comment_ids": set(),
+            "loaded_parent_comment_id": str(parent_comment.pk),
         },
     )
 
@@ -169,6 +348,7 @@ def wiki_detail(request, slug):
             "share_url": share_url,
             "copy_human_text": _build_human_copy(document, revision, share_url),
             "copy_agent_text": _build_agent_copy(document, revision, share_url),
+            "compose_post_url": _build_community_compose_url(document),
         },
     )
 
@@ -235,6 +415,281 @@ def _build_agent_copy(document, revision, share_url):
             ]
         )
     return "\n".join(lines).strip()
+
+
+def _community_visible_posts_queryset(*, user, selected_tag_slug=""):
+    visible_filter = Q(status=PostStatus.PUBLISHED)
+    if user is not None:
+        visible_filter |= Q(author_user=user, status=PostStatus.DRAFT)
+
+    queryset = (
+        Post.objects.filter(visible_filter)
+        .select_related("author_user")
+        .prefetch_related("tags", "wiki_documents")
+        .annotate(
+            comment_count=Count(
+                "comments",
+                filter=Q(comments__status=CommentStatus.PUBLISHED),
+                distinct=True,
+            )
+        )
+        .order_by("-created_at", "-id")
+    )
+    if selected_tag_slug:
+        queryset = queryset.filter(tags__slug=selected_tag_slug)
+    return queryset.distinct()
+
+
+def _community_hot_posts_queryset():
+    return (
+        Post.objects.filter(status=PostStatus.PUBLISHED)
+        .select_related("author_user")
+        .prefetch_related("tags", "wiki_documents")
+        .annotate(
+            comment_count=Count(
+                "comments",
+                filter=Q(comments__status=CommentStatus.PUBLISHED),
+                distinct=True,
+            )
+        )
+        .order_by("-comment_count", "-created_at", "-id")
+    )
+
+
+def _community_tag_queryset():
+    return (
+        Tag.objects.filter(posts__status=PostStatus.PUBLISHED)
+        .annotate(
+            published_post_count=Count(
+                "posts", filter=Q(posts__status=PostStatus.PUBLISHED)
+            )
+        )
+        .order_by("-published_post_count", "name")
+    )
+
+
+def _community_wiki_document_queryset():
+    return WikiDocument.objects.filter(
+        status=WikiDocumentStatus.PUBLISHED,
+        current_revision__isnull=False,
+    ).order_by("-updated_at", "title")
+
+
+def _build_community_detail_context(*, post, comment_form, reply_target_id=""):
+    expanded_comment_ids = set()
+    if reply_target_id:
+        comments = _get_comment_tree(post)
+        expanded_comment_ids = _get_comment_ancestor_ids(post, reply_target_id)
+    else:
+        comments = _get_top_level_comments(post)
+    linked_wiki_documents = _get_wiki_documents_for_post(post)
+    related_posts = list(
+        _community_hot_posts_queryset().exclude(pk=post.pk).filter(~Q(pk=post.pk))[:4]
+    )
+    _attach_linked_wiki_documents(related_posts)
+    comment_total_count = Comment.objects.filter(
+        post=post,
+        status=CommentStatus.PUBLISHED,
+    ).count()
+    return {
+        "page_heading": "Community",
+        "post": post,
+        "comment_form": comment_form,
+        "comments": comments,
+        "comment_total_count": comment_total_count,
+        "reply_target_id": reply_target_id,
+        "expanded_comment_ids": expanded_comment_ids,
+        "is_draft": post.status == PostStatus.DRAFT,
+        "linked_wiki_documents": linked_wiki_documents,
+        "related_posts": related_posts,
+    }
+
+
+def _get_top_level_comments(post):
+    return list(
+        _comment_queryset()
+        .filter(
+            post=post,
+            parent_comment__isnull=True,
+            status=CommentStatus.PUBLISHED,
+        )
+        .order_by("created_at")
+    )
+
+
+def _get_comment_tree(post):
+    comments = list(
+        _comment_queryset()
+        .filter(
+            post=post,
+            status=CommentStatus.PUBLISHED,
+        )
+        .order_by("created_at")
+    )
+    comments_by_parent_id: dict[str, list[Comment]] = {}
+    root_comments: list[Comment] = []
+    for comment in comments:
+        comment.child_comments = []
+        if comment.parent_comment_id is None:
+            root_comments.append(comment)
+            continue
+        comments_by_parent_id.setdefault(str(comment.parent_comment_id), []).append(
+            comment
+        )
+
+    for comment in comments:
+        comment.child_comments = comments_by_parent_id.get(str(comment.pk), [])
+    return root_comments
+
+
+def _get_child_comments(parent_comment):
+    return list(
+        _comment_queryset()
+        .filter(
+            parent_comment=parent_comment,
+            status=CommentStatus.PUBLISHED,
+        )
+        .order_by("created_at")
+    )
+
+
+def _comment_queryset():
+    return Comment.objects.select_related("author_user").annotate(
+        child_comment_count=Count(
+            "replies",
+            filter=Q(replies__status=CommentStatus.PUBLISHED),
+            distinct=True,
+        )
+    )
+
+
+def _paginate_community_posts(queryset, *, page_number):
+    paginator = Paginator(queryset, COMMUNITY_FEED_PAGE_SIZE)
+    return paginator.get_page(page_number)
+
+
+def _get_comment_ancestor_ids(post, comment_id):
+    comments = Comment.objects.filter(
+        post=post,
+        status=CommentStatus.PUBLISHED,
+    ).values("id", "parent_comment_id")
+    parent_by_id = {
+        str(comment["id"]): (
+            str(comment["parent_comment_id"]) if comment["parent_comment_id"] else None
+        )
+        for comment in comments
+    }
+    expanded_comment_ids: set[str] = set()
+    current_id = comment_id
+    while current_id:
+        expanded_comment_ids.add(current_id)
+        current_id = parent_by_id.get(current_id)
+    return expanded_comment_ids
+
+
+def _get_wiki_documents_for_post(post):
+    linked_documents: list[WikiDocument] = []
+    seen_document_ids: set[str] = set()
+
+    explicit_documents = list(post.wiki_documents.all())
+    for document in explicit_documents:
+        document_id = str(document.pk)
+        if document_id in seen_document_ids:
+            continue
+        linked_documents.append(document)
+        seen_document_ids.add(document_id)
+
+    wiki_slugs = extract_linked_wiki_slugs(post.content_markdown)
+    if not wiki_slugs:
+        return linked_documents
+
+    documents_by_slug = {
+        document.slug: document
+        for document in WikiDocument.objects.filter(
+            slug__in=wiki_slugs,
+            status=WikiDocumentStatus.PUBLISHED,
+            current_revision__isnull=False,
+        ).select_related("current_revision")
+    }
+    for slug in wiki_slugs:
+        document = documents_by_slug.get(slug)
+        if document is None:
+            continue
+        document_id = str(document.pk)
+        if document_id in seen_document_ids:
+            continue
+        linked_documents.append(document)
+        seen_document_ids.add(document_id)
+    return linked_documents
+
+
+def _attach_linked_wiki_documents(posts):
+    posts = list(posts)
+    explicit_documents_by_post_id: dict[str, list[WikiDocument]] = {}
+    seen_document_ids_by_post_id: dict[str, set[str]] = {}
+    slugs: list[str] = []
+    for post in posts:
+        post_id = str(post.pk)
+        explicit_documents = list(post.wiki_documents.all())
+        explicit_documents_by_post_id[post_id] = explicit_documents
+        seen_document_ids_by_post_id[post_id] = {
+            str(document.pk) for document in explicit_documents
+        }
+        slugs.extend(extract_linked_wiki_slugs(post.content_markdown))
+
+    if not slugs:
+        for post in posts:
+            post.linked_wiki_documents = explicit_documents_by_post_id[str(post.pk)]
+        return
+
+    documents_by_slug = {
+        document.slug: document
+        for document in WikiDocument.objects.filter(
+            slug__in=slugs,
+            status=WikiDocumentStatus.PUBLISHED,
+            current_revision__isnull=False,
+        )
+    }
+    for post in posts:
+        post_id = str(post.pk)
+        linked_documents = list(explicit_documents_by_post_id[post_id])
+        seen_document_ids = seen_document_ids_by_post_id[post_id]
+        for slug in extract_linked_wiki_slugs(post.content_markdown):
+            document = documents_by_slug.get(slug)
+            if document is None:
+                continue
+            document_id = str(document.pk)
+            if document_id in seen_document_ids:
+                continue
+            linked_documents.append(document)
+            seen_document_ids.add(document_id)
+        post.linked_wiki_documents = linked_documents
+
+
+def _build_community_compose_url(document):
+    return f"{reverse('community_list')}?{urlencode({'compose': 1, 'wiki_slug': document.slug})}"
+
+
+def _build_community_feed_url(*, page, selected_tag_slug=""):
+    params = {"page": page}
+    if selected_tag_slug:
+        params["tag"] = selected_tag_slug
+    return f"{reverse('community_list')}?{urlencode(params)}"
+
+
+def _build_community_list_url(*, compose, selected_tag_slug="", source_wiki_slug=""):
+    params = {}
+    if selected_tag_slug:
+        params["tag"] = selected_tag_slug
+    if compose:
+        params["compose"] = 1
+        if source_wiki_slug:
+            params["wiki_slug"] = source_wiki_slug
+
+    base_url = reverse("community_list")
+    if not params:
+        return base_url
+    return f"{base_url}?{urlencode(params)}"
 
 
 @login_required

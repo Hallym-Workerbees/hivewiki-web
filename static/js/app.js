@@ -258,9 +258,85 @@ function disconnectWikiTocObserver() {
   }
 }
 
+function setCommunityComposeModalOpen(isOpen) {
+  const modal = document.querySelector("[data-community-compose-modal]");
+  if (!(modal instanceof HTMLElement)) {
+    return;
+  }
+
+  modal.classList.toggle("hidden", !isOpen);
+  modal.classList.toggle("flex", isOpen);
+  document.body.classList.toggle("overflow-hidden", isOpen);
+}
+
+document.body.addEventListener("click", (event) => {
+  const openTrigger =
+    event.target instanceof Element
+      ? event.target.closest("[data-community-compose-open]")
+      : null;
+  if (openTrigger) {
+    event.preventDefault();
+    setCommunityComposeModalOpen(true);
+    return;
+  }
+
+  const closeTrigger =
+    event.target instanceof Element
+      ? event.target.closest("[data-community-compose-close]")
+      : null;
+  if (closeTrigger) {
+    event.preventDefault();
+    setCommunityComposeModalOpen(false);
+    return;
+  }
+
+  const modal =
+    event.target instanceof Element
+      ? event.target.closest("[data-community-compose-modal]")
+      : null;
+  if (modal && event.target === modal) {
+    setCommunityComposeModalOpen(false);
+  }
+});
+
+document.body.addEventListener("click", (event) => {
+  const tagChip =
+    event.target instanceof Element
+      ? event.target.closest("[data-community-tag-chip]")
+      : null;
+  if (!(tagChip instanceof HTMLElement)) {
+    return;
+  }
+
+  const tagInput = document.querySelector("[data-community-tag-input]");
+  if (!(tagInput instanceof HTMLInputElement)) {
+    return;
+  }
+
+  const tagValue = tagChip.dataset.tagValue?.trim();
+  if (!tagValue) {
+    return;
+  }
+
+  const currentValues = tagInput.value
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (currentValues.some((value) => value.toLowerCase() === tagValue.toLowerCase())) {
+    return;
+  }
+
+  currentValues.push(tagValue);
+  tagInput.value = currentValues.join(", ");
+  tagInput.dispatchEvent(new Event("input", { bubbles: true }));
+});
+
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") {
     return;
+  }
+  if (document.querySelector("[data-community-compose-modal].flex")) {
+    setCommunityComposeModalOpen(false);
   }
   if (!document.querySelector("[data-admin-modal]")) {
     return;
@@ -412,6 +488,9 @@ async function syncBrowserTimezone() {
 void syncBrowserTimezone();
 initializeWikiToc();
 initializeCodeCopyButtons();
+if (document.querySelector("[data-community-compose-modal].flex")) {
+  document.body.classList.add("overflow-hidden");
+}
 window.addEventListener("load", () => renderMath(document.body));
 
 const flashMessages = document.querySelectorAll(".flash-message");

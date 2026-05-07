@@ -1,8 +1,10 @@
-<section class="overflow-hidden rounded-[2rem] bg-stone-950 px-8 py-9 text-stone-100">
-    <div class="max-w-2xl">
+<section class="ambient-shadow overflow-hidden rounded-[2rem] bg-surface-container-low px-8 py-9 text-on-surface">
+    <div class="min-w-0 max-w-2xl">
         {% if eyebrow %}<div class="text-xs uppercase tracking-[0.28em] text-stone-400">{{ eyebrow }}</div>{% endif %}
-        <h2 class="mt-3 font-headline text-4xl font-black tracking-tight">{{ title }}</h2>
-        <p class="mt-4 text-sm leading-8 text-stone-300">{{ description }}</p>
+        <h2 class="mt-3 text-balance font-headline text-3xl font-black leading-tight tracking-tight lg:text-[2rem]">
+            {{ title }}
+        </h2>
+        <p class="mt-4 text-sm leading-8 text-on-surface-variant">{{ description }}</p>
     </div>
     {% if cta_href and cta_label %}
         <div class="mt-8">

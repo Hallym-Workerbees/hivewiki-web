@@ -170,6 +170,7 @@ class SourceForm(forms.ModelForm):
 
 
 class PostForm(forms.Form):
+    draft_id = forms.UUIDField(required=False, widget=forms.HiddenInput())
     body_markdown = forms.CharField(
         label="본문",
         widget=forms.Textarea(attrs={"rows": 12}),
@@ -251,22 +252,40 @@ class PostForm(forms.Form):
 
     def clean_wiki_documents(self):
         wiki_documents = list(self.cleaned_data["wiki_documents"])
-        if len(wiki_documents) > 3:
-            raise forms.ValidationError("위키 문서는 최대 3개까지 연결할 수 있습니다.")
+        if len(wiki_documents) > 10:
+            raise forms.ValidationError("위키 문서는 최대 10개까지 연결할 수 있습니다.")
         return wiki_documents
 
     @transaction.atomic
-    def save(self, *, author_user):
-        post = Post.objects.create(
-            author_user=author_user,
-            content_markdown=build_post_markdown(self.cleaned_data["body_markdown"]),
-            status=self.cleaned_data["status"],
-        )
+    def save(self, *, author_user, instance=None):
+        if instance is None:
+            post = Post.objects.create(
+                author_user=author_user,
+                content_markdown=build_post_markdown(
+                    self.cleaned_data["body_markdown"]
+                ),
+                status=self.cleaned_data["status"],
+            )
+        else:
+            post = instance
+            post.author_user = author_user
+            post.content_markdown = build_post_markdown(
+                self.cleaned_data["body_markdown"]
+            )
+            post.status = self.cleaned_data["status"]
+            post.updated_at = timezone.now()
+            post.save(
+                update_fields=[
+                    "author_user",
+                    "content_markdown",
+                    "status",
+                    "updated_at",
+                ]
+            )
         tags = [
             self._get_or_create_tag(name) for name in self.cleaned_data["tag_names"]
         ]
-        if tags:
-            post.tags.set(tags)
+        post.tags.set(tags)
         post.wiki_documents.set(self.cleaned_data["wiki_documents"])
         return post
 

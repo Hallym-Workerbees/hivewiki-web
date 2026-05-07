@@ -1,11 +1,14 @@
-<div class="{% if compose_requested %}flex{% else %}hidden{% endif %} fixed inset-0 z-50 items-end justify-center bg-stone-950/30 px-4 py-6 sm:items-center"
+<div class="{% if compose_requested %}flex{% else %}hidden{% endif %} fixed inset-0 z-50 items-end justify-center overflow-y-auto bg-stone-950/30 px-4 py-4 sm:items-start sm:py-8"
      data-community-compose-modal>
-    <div class="w-full max-w-2xl rounded-[2rem] bg-surface-container-low p-6 shadow-[0_24px_64px_rgba(28,27,27,0.16)] sm:p-8">
-        <div class="flex items-start justify-between gap-4">
+    {{ compose_initial_payload|json_script:"community-compose-initial-payload" }}
+    <div class="my-auto flex max-h-[calc(100vh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-[2rem] bg-surface-container-low shadow-[0_24px_64px_rgba(28,27,27,0.16)] sm:max-h-[calc(100vh-4rem)]">
+        <div class="flex items-start justify-between gap-4 px-5 pb-4 pt-5 sm:px-6 sm:pb-5 sm:pt-6">
             <div>
-                <div class="text-sm font-semibold text-primary">새 포스트</div>
-                <h2 class="mt-2 font-headline text-3xl font-black tracking-tight">질문이나 맥락을 바로 남기기</h2>
-                <p class="mt-3 text-sm leading-7 text-on-surface-variant">제목 없이 본문 그대로 올라갑니다. 태그와 관련 위키만 고르면 나중에 다시 찾기 쉬워집니다.</p>
+                <div class="text-sm font-semibold text-primary">{{ compose_title_eyebrow|default:"새 포스트" }}</div>
+                <h2 class="mt-2 font-headline text-3xl font-black tracking-tight">{{ compose_heading|default:"질문이나 맥락을 바로 남기기" }}</h2>
+                <p class="mt-3 text-sm leading-7 text-on-surface-variant">
+                    {{ compose_description|default:"제목 없이 본문 그대로 올라갑니다. 태그와 관련 위키만 고르면 나중에 다시 찾기 쉬워집니다." }}
+                </p>
                 {% if prefilled_wiki_document %}
                     <div class="mt-4 inline-flex rounded-full bg-secondary-container px-3 py-1 text-xs font-semibold text-on-secondary-container">
                         현재 위키에서 시작: {{ prefilled_wiki_document.title }}
@@ -29,9 +32,52 @@
                 </svg>
             </a>
         </div>
-        <form method="post" class="mt-6 space-y-4">
+        <form method="post"
+              action="{% if post_edit_submit_url %}{{ post_edit_submit_url }}{% elif compose_submit_url %}{{ compose_submit_url }}{% endif %}"
+              class="flex-1 space-y-4 overflow-y-auto px-5 pb-5 sm:px-6 sm:pb-6">
             {% csrf_token %}
+            {{ post_form.draft_id }}
             {% include "partials/form_errors.html" with form=post_form %}
+            {% if draft_posts %}
+                <section class="rounded-[1.5rem] bg-surface-container-lowest p-4 ambient-shadow">
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <div class="text-sm font-semibold text-on-surface">내 임시글</div>
+                            <p class="mt-1 text-xs leading-6 text-on-surface-variant">최근 저장한 초안을 다시 불러와 이어서 쓸 수 있습니다.</p>
+                        </div>
+                        {% if active_draft_post %}
+                            <span class="rounded-full bg-primary-container px-3 py-1 text-xs font-semibold text-on-primary-container">불러온 초안</span>
+                        {% endif %}
+                    </div>
+                    <div class="mt-4 flex gap-3 overflow-x-auto pb-1">
+                        {% for draft_post in draft_posts %}
+                            {{ draft_post.compose_payload|json_script:draft_post.compose_payload_script_id }}
+                            <button type="button"
+                                    class="min-w-64 rounded-[1.25rem] border px-4 py-3 text-left transition {% if active_draft_post and draft_post.pk == active_draft_post.pk %}border-primary/30 bg-primary-container/40{% else %}border-transparent bg-white hover:border-primary/15 hover:bg-surface{% endif %}"
+                                    data-community-draft-load
+                                    data-draft-id="{{ draft_post.pk }}"
+                                    data-draft-payload-id="{{ draft_post.compose_payload_script_id }}">
+                                <div class="flex items-center justify-between gap-3">
+                                    <span class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">임시 저장</span>
+                                    <span class="text-[11px] text-on-surface-variant timezone-sensitive"
+                                          data-local-datetime="{{ draft_post.updated_at|date:'c' }}"
+                                          data-local-format="datetime">{{ draft_post.updated_at|date:"Y.m.d H:i" }}</span>
+                                </div>
+                                <div class="mt-3 line-clamp-2 text-sm font-semibold text-on-surface">
+                                    {{ draft_post.summary|default:"본문을 아직 입력하지 않은 초안" }}
+                                </div>
+                                {% if draft_post.tags.all %}
+                                    <div class="mt-3 flex flex-wrap gap-2">
+                                        {% for tag in draft_post.tags.all|slice:":3" %}
+                                            <span class="rounded-full bg-surface-container-high px-2 py-1 text-[11px] text-on-surface-variant">#{{ tag.name }}</span>
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </button>
+                        {% endfor %}
+                    </div>
+                </section>
+            {% endif %}
             {% include "partials/auth_field.html" with field=post_form.body_markdown %}
             <section class="rounded-[1.5rem] bg-surface-container-lowest p-4 ambient-shadow">
                 <div class="flex items-center justify-between gap-3">
@@ -39,42 +85,113 @@
                         <div class="text-sm font-semibold text-on-surface">{{ post_form.wiki_documents.label }}</div>
                         <p class="mt-1 text-xs leading-6 text-on-surface-variant">{{ post_form.wiki_documents.help_text }}</p>
                     </div>
-                    <div class="rounded-full bg-surface-container-high px-3 py-1 text-xs font-semibold text-primary">최대 3개</div>
+                    <div class="rounded-full bg-surface-container-high px-3 py-1 text-xs font-semibold text-primary">최대 10개</div>
                 </div>
                 {% if post_form.wiki_documents.errors %}
                     <div class="mt-3 space-y-1">
                         {% for error in post_form.wiki_documents.errors %}<p class="text-sm text-red-700">{{ error }}</p>{% endfor %}
                     </div>
                 {% endif %}
-                <div class="mt-4 grid gap-3 sm:grid-cols-2">
-                    {% for wiki_document in featured_wiki_documents %}
-                        <label for="compose-wiki-{{ wiki_document.pk }}"
-                               class="group flex cursor-pointer items-start gap-3 rounded-[1.25rem] border border-transparent bg-white px-4 py-4 transition hover:-translate-y-0.5 hover:border-primary/15 hover:bg-surface">
-                            <input id="compose-wiki-{{ wiki_document.pk }}"
-                                   type="checkbox"
+                <div class="mt-4" hx-include="#community-wiki-selected">
+                    <div class="ambient-shadow flex items-center gap-3 rounded-[1.5rem] border border-stone-200/70 bg-white px-4 py-3">
+                        <span class="text-stone-400">⌕</span>
+                        <input type="text"
+                               name="q"
+                               value=""
+                               placeholder="위키 제목, 요약, 슬러그 검색"
+                               hx-get="{{ compose_wiki_search_url }}"
+                               hx-target="#community-wiki-picker-results"
+                               hx-swap="innerHTML"
+                               hx-trigger="input delay:250ms, search, focus"
+                               hx-include="#community-wiki-selected"
+                               {% if locked_wiki_document_ids %}data-community-locked-wiki-id="{{ locked_wiki_document_ids|first }}"{% endif %}
+                               class="w-full border-0 bg-transparent p-0 text-sm text-on-surface placeholder:text-stone-400 focus:ring-0">
+                    </div>
+                </div>
+                <div id="community-wiki-selected"
+                     data-community-wiki-selected
+                     data-community-wiki-max="10"
+                     {% if locked_wiki_document_ids %}data-community-wiki-locked="{{ locked_wiki_document_ids|join:',' }}"{% endif %}
+                     class="mt-4 flex flex-wrap gap-2">
+                    {% for wiki_document in selected_wiki_documents %}
+                        <span class="inline-flex items-center gap-2 rounded-full {% if prefilled_wiki_document and wiki_document.pk == prefilled_wiki_document.pk %}bg-primary text-white{% else %}bg-secondary-container text-on-secondary-container{% endif %} px-3 py-2 text-xs font-semibold"
+                              data-community-wiki-chip
+                              data-wiki-id="{{ wiki_document.pk }}"
+                              data-wiki-title="{{ wiki_document.title }}"
+                              data-wiki-summary="{{ wiki_document.summary }}">
+                            <input type="hidden"
                                    name="{{ post_form.wiki_documents.html_name }}"
                                    value="{{ wiki_document.pk }}"
-                                   class="mt-1 h-4 w-4 rounded border-stone-300 text-primary focus:ring-primary-container"
-                                   {% if wiki_document.pk|stringformat:"s" in selected_wiki_document_ids %}checked{% endif %}>
-                            <span class="min-w-0 flex-1">
-                                <span class="block text-sm font-semibold text-on-surface">{{ wiki_document.title }}</span>
-                                <span class="mt-1 block line-clamp-2 text-xs leading-6 text-on-surface-variant">{{ wiki_document.summary }}</span>
-                            </span>
-                        </label>
+                                   data-community-wiki-input>
+                            <span>{{ wiki_document.title }}</span>
+                            {% if prefilled_wiki_document and wiki_document.pk == prefilled_wiki_document.pk %}
+                                <span class="rounded-full bg-white/15 px-2 py-0.5 text-[10px]">기본 참조</span>
+                            {% else %}
+                                <button type="button"
+                                        class="rounded-full bg-black/10 px-2 py-0.5 text-[10px]"
+                                        data-community-wiki-remove>제거</button>
+                            {% endif %}
+                        </span>
                     {% empty %}
-                        <p class="text-sm leading-7 text-on-surface-variant">연결할 수 있는 위키 문서가 아직 없습니다.</p>
+                        <p class="text-sm leading-7 text-on-surface-variant"
+                           data-community-wiki-empty>추천 문서를 고르거나 검색해서 연결해 보세요.</p>
                     {% endfor %}
                 </div>
+                <div id="community-wiki-picker-results"
+                     class="mt-4 max-h-64 overflow-y-auto pr-1">
+                    {% include "partials/community_wiki_picker_results.html" with wiki_results=featured_wiki_documents selected_wiki_document_ids=selected_wiki_document_ids locked_wiki_document_ids=locked_wiki_document_ids %}
+                </div>
             </section>
-            {% include "partials/auth_field.html" with field=post_form.tag_names %}
-            <div class="flex flex-wrap gap-2">
-                {% for tag in tag_options|slice:":8" %}
-                    <button type="button"
-                            class="rounded-full bg-secondary-container px-3 py-1 text-xs font-medium text-on-secondary-container transition hover:-translate-y-0.5"
-                            data-community-tag-chip
-                            data-tag-value="{{ tag.name }}">#{{ tag.name }}</button>
-                {% endfor %}
-            </div>
+            <section class="rounded-[1.5rem] bg-surface-container-lowest p-4 ambient-shadow">
+                <div class="flex items-center justify-between gap-3">
+                    <div>
+                        <div class="text-sm font-semibold text-on-surface">{{ post_form.tag_names.label }}</div>
+                        <p class="mt-1 text-xs leading-6 text-on-surface-variant">{{ post_form.tag_names.help_text }}</p>
+                    </div>
+                    <div class="rounded-full bg-surface-container-high px-3 py-1 text-xs font-semibold text-primary">최대 5개</div>
+                </div>
+                <div class="hidden">{{ post_form.tag_names }}</div>
+                {% if post_form.tag_names.errors %}
+                    <div class="mt-3 space-y-1">
+                        {% for error in post_form.tag_names.errors %}<p class="text-sm text-red-700">{{ error }}</p>{% endfor %}
+                    </div>
+                {% endif %}
+                <div class="mt-4 ambient-shadow flex items-center gap-3 rounded-[1.5rem] border border-stone-200/70 bg-white px-4 py-3">
+                    <span class="text-stone-400">#</span>
+                    <input type="text"
+                           value=""
+                           placeholder="태그 검색 또는 직접 입력 후 Enter"
+                           class="w-full border-0 bg-transparent p-0 text-sm text-on-surface placeholder:text-stone-400 focus:ring-0"
+                           data-community-tag-search>
+                </div>
+                <div class="mt-4 flex flex-wrap gap-2"
+                     data-community-tag-selected
+                     data-community-tag-max="5">
+                    {% for tag_name in selected_tag_names %}
+                        <span class="inline-flex items-center gap-2 rounded-full bg-secondary-container px-3 py-2 text-xs font-semibold text-on-secondary-container"
+                              data-community-tag-selected-chip
+                              data-tag-value="{{ tag_name }}">
+                            <span>#{{ tag_name }}</span>
+                            <button type="button"
+                                    class="rounded-full bg-black/10 px-2 py-0.5 text-[10px]"
+                                    data-community-tag-remove>제거</button>
+                        </span>
+                    {% empty %}
+                        <p class="text-sm leading-7 text-on-surface-variant"
+                           data-community-tag-empty>추천 태그를 고르거나 새 태그를 바로 추가해 보세요.</p>
+                    {% endfor %}
+                </div>
+                <div class="mt-4 max-h-48 overflow-y-auto pr-1">
+                    <div class="flex flex-wrap gap-2" data-community-tag-options>
+                        {% for tag in compose_tag_options %}
+                            <button type="button"
+                                    class="rounded-full bg-surface-container-high px-3 py-1 text-xs font-medium text-on-surface-variant transition hover:-translate-y-0.5 hover:bg-secondary-container hover:text-on-secondary-container"
+                                    data-community-tag-option
+                                    data-tag-value="{{ tag.name }}">#{{ tag.name }}</button>
+                        {% endfor %}
+                    </div>
+                </div>
+            </section>
             {% include "partials/auth_field.html" with field=post_form.status %}
             <div class="flex items-center justify-between gap-3 pt-2">
                 <a href="{{ compose_close_url|default:'/community/' }}"
@@ -82,7 +199,7 @@
                    data-community-compose-close>취소</a>
                 <button type="submit"
                         class="inline-flex items-center justify-center rounded-xl bg-primary-container px-5 py-3 text-sm font-bold text-on-primary-container">
-                    게시글 저장
+                    {{ compose_submit_label|default:"게시글 저장" }}
                 </button>
             </div>
         </form>

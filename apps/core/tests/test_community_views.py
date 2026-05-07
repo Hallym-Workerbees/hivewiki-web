@@ -147,3 +147,89 @@ class CommunityViewTests(TestCase):
         self.assertEqual(len(second_page_ids), 1)
         self.assertFalse(set(first_page_ids) & set(second_page_ids))
         self.assertEqual(first_page_ids + second_page_ids, expected_ids)
+
+    def test_author_can_edit_own_post(self):
+        post = Post.objects.create(
+            author_user=self.user,
+            content_markdown="기존 본문",
+            status=PostStatus.PUBLISHED,
+        )
+
+        get_response = self.client.get(f"/community/{post.id}/edit/")
+        self.assertEqual(get_response.status_code, 200)
+        self.assertContains(get_response, "내 게시글 다듬기")
+
+        post_response = self.client.post(
+            f"/community/{post.id}/edit/",
+            {
+                "draft_id": str(post.id),
+                "body_markdown": "수정된 본문",
+                "tag_names": "수정, 공유",
+                "status": PostStatus.PUBLISHED,
+            },
+        )
+
+        self.assertRedirects(post_response, f"/community/{post.id}/")
+        post.refresh_from_db()
+        self.assertEqual(post.body_markdown, "수정된 본문")
+        self.assertEqual(
+            list(post.tags.order_by("name").values_list("name", flat=True)),
+            ["공유", "수정"],
+        )
+
+    def test_author_can_edit_own_comment(self):
+        post = Post.objects.create(
+            author_user=self.user,
+            content_markdown="댓글 수정 포스트",
+            status=PostStatus.PUBLISHED,
+        )
+        comment = Comment.objects.create(
+            post=post,
+            author_user=self.user,
+            content="기존 댓글",
+            status=CommentStatus.PUBLISHED,
+        )
+
+        get_response = self.client.get(
+            f"/community/{post.id}/comments/{comment.id}/edit/"
+        )
+        self.assertEqual(get_response.status_code, 200)
+        self.assertContains(get_response, "수정 저장")
+        self.assertContains(get_response, "기존 댓글")
+
+        post_response = self.client.post(
+            f"/community/{post.id}/comments/{comment.id}/edit/",
+            {
+                "content": "수정된 댓글",
+                "parent_comment_id": "",
+            },
+        )
+
+        self.assertRedirects(
+            post_response, f"/community/{post.id}/#comment-{comment.id}"
+        )
+        comment.refresh_from_db()
+        self.assertEqual(comment.content, "수정된 댓글")
+
+    def test_anonymous_user_can_read_community_but_not_see_drafts_in_feed(self):
+        published_post = Post.objects.create(
+            author_user=self.user,
+            content_markdown="공개 게시글",
+            status=PostStatus.PUBLISHED,
+        )
+        Post.objects.create(
+            author_user=self.user,
+            content_markdown="임시 게시글",
+            status=PostStatus.DRAFT,
+        )
+
+        self.client.session.flush()
+
+        list_response = self.client.get("/community/")
+        detail_response = self.client.get(f"/community/{published_post.id}/")
+
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertContains(list_response, "공개 게시글")
+        self.assertNotContains(list_response, "임시 게시글")
+        self.assertContains(detail_response, "로그인하고 댓글 쓰기")

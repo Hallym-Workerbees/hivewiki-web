@@ -117,5 +117,8 @@
             {% endif %}
         </div>
     </section>
-    {% include "partials/wiki_write_fab.html" with compose_post_url=compose_post_url %}
+    {% include "partials/wiki_write_fab.html" with compose_post_url=compose_post_url compose_open_url=compose_open_url %}
+    {% if current_user %}
+        {% include "partials/community_compose_modal.html" with compose_requested=compose_requested post_form=post_form prefilled_wiki_document=prefilled_wiki_document featured_wiki_documents=featured_wiki_documents selected_wiki_document_ids=selected_wiki_document_ids tag_options=tag_options compose_close_url=compose_close_url compose_submit_url=compose_submit_url %}
+    {% endif %}
 {% endblock app_content %}

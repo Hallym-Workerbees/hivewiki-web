@@ -42,14 +42,29 @@ urlpatterns = [
     path("community/", views.community_list, name="community_list"),
     path("community/<uuid:post_id>/", views.community_detail, name="community_detail"),
     path(
+        "community/<uuid:post_id>/edit/",
+        views.community_post_edit,
+        name="community_post_edit",
+    ),
+    path(
         "community/<uuid:post_id>/comments/",
         views.community_comment_create,
         name="community_comment_create",
     ),
     path(
+        "community/<uuid:post_id>/comments/<uuid:comment_id>/edit/",
+        views.community_comment_edit,
+        name="community_comment_edit",
+    ),
+    path(
         "community/<uuid:post_id>/comments/<uuid:comment_id>/children/",
         views.community_comment_children,
         name="community_comment_children",
+    ),
+    path(
+        "community/wiki-picker/",
+        views.community_wiki_picker,
+        name="community_wiki_picker",
     ),
     path("wiki/", views.wiki_home, name="wiki_home"),
     path("wiki/<slug:slug>/", views.wiki_detail, name="wiki_detail"),

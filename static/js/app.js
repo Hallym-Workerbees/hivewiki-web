@@ -269,12 +269,59 @@ function setCommunityComposeModalOpen(isOpen) {
   document.body.classList.toggle("overflow-hidden", isOpen);
 }
 
+function applyCommunityComposePayload(payload) {
+  const bodyInput = document.querySelector("[data-community-compose-body]");
+  const statusInput = document.querySelector('select[name="status"]');
+  const draftIdInput = document.querySelector('input[name="draft_id"]');
+  const tagInput = getCommunityTagInput();
+  if (
+    !(bodyInput instanceof HTMLTextAreaElement) ||
+    !(statusInput instanceof HTMLSelectElement) ||
+    !(draftIdInput instanceof HTMLInputElement) ||
+    !tagInput
+  ) {
+    return;
+  }
+
+  bodyInput.value = `${payload.body_markdown || ""}`;
+  statusInput.value = `${payload.status || "published"}`;
+  draftIdInput.value = `${payload.draft_id || ""}`;
+  tagInput.value = `${payload.tag_names || ""}`;
+  renderCommunitySelectedTags(getCommunitySelectedTags(tagInput));
+  renderCommunitySelectedWikiDocuments(payload.wiki_document_payloads || []);
+}
+
+function resetCommunityComposeModalState() {
+  const payloadElement = document.getElementById("community-compose-initial-payload");
+  if (!payloadElement) {
+    return;
+  }
+
+  const payload = JSON.parse(payloadElement.textContent || "{}");
+  applyCommunityComposePayload(payload);
+
+  document.querySelectorAll("[data-community-draft-load]").forEach((button) => {
+    if (!(button instanceof HTMLButtonElement)) {
+      return;
+    }
+    const draftId = button.dataset.draftId?.trim() || "";
+    const isActive = draftId && draftId === `${payload.draft_id || ""}`;
+    button.classList.toggle("border-primary/30", isActive);
+    button.classList.toggle("bg-primary-container/40", isActive);
+    button.classList.toggle("border-transparent", !isActive);
+    button.classList.toggle("bg-white", !isActive);
+  });
+}
+
 document.body.addEventListener("click", (event) => {
   const openTrigger =
     event.target instanceof Element
       ? event.target.closest("[data-community-compose-open]")
       : null;
   if (openTrigger) {
+    if (!document.querySelector("[data-community-compose-modal]")) {
+      return;
+    }
     event.preventDefault();
     setCommunityComposeModalOpen(true);
     return;
@@ -286,6 +333,7 @@ document.body.addEventListener("click", (event) => {
       : null;
   if (closeTrigger) {
     event.preventDefault();
+    resetCommunityComposeModalState();
     setCommunityComposeModalOpen(false);
     return;
   }
@@ -295,40 +343,414 @@ document.body.addEventListener("click", (event) => {
       ? event.target.closest("[data-community-compose-modal]")
       : null;
   if (modal && event.target === modal) {
+    resetCommunityComposeModalState();
     setCommunityComposeModalOpen(false);
   }
 });
 
+function getCommunityTagInput() {
+  const input = document.querySelector("[data-community-tag-input]");
+  return input instanceof HTMLInputElement ? input : null;
+}
+
+function getCommunityTagSelectedContainer() {
+  const container = document.querySelector("[data-community-tag-selected]");
+  return container instanceof HTMLElement ? container : null;
+}
+
+function getCommunityTagSearchInput() {
+  const input = document.querySelector("[data-community-tag-search]");
+  return input instanceof HTMLInputElement ? input : null;
+}
+
+function normalizeCommunityTagValue(value) {
+  return value.trim().replaceAll(/\s+/g, " ");
+}
+
+function getCommunitySelectedTags(tagInput) {
+  return tagInput.value
+    .split(",")
+    .map((value) => normalizeCommunityTagValue(value))
+    .filter(Boolean);
+}
+
+function syncCommunityTagEmptyState(container) {
+  const emptyState = container.querySelector("[data-community-tag-empty]");
+  const hasChips = container.querySelector("[data-community-tag-selected-chip]");
+  if (!(emptyState instanceof HTMLElement)) {
+    return;
+  }
+  emptyState.classList.toggle("hidden", Boolean(hasChips));
+}
+
+function syncCommunityTagOptionVisibility(searchQuery, selectedTags) {
+  const normalizedQuery = normalizeCommunityTagValue(searchQuery).toLowerCase();
+  const selectedSet = new Set(selectedTags.map((tag) => tag.toLowerCase()));
+  document.querySelectorAll("[data-community-tag-option]").forEach((option) => {
+    if (!(option instanceof HTMLElement)) {
+      return;
+    }
+    const tagValue = normalizeCommunityTagValue(option.dataset.tagValue || "");
+    const matchesQuery =
+      !normalizedQuery || tagValue.toLowerCase().includes(normalizedQuery);
+    const isSelected = selectedSet.has(tagValue.toLowerCase());
+    option.classList.toggle("hidden", !matchesQuery || isSelected);
+  });
+}
+
+function renderCommunitySelectedTags(selectedTags) {
+  const tagInput = getCommunityTagInput();
+  const container = getCommunityTagSelectedContainer();
+  if (!tagInput || !container) {
+    return;
+  }
+
+  const emptyState = container.querySelector("[data-community-tag-empty]");
+  container
+    .querySelectorAll("[data-community-tag-selected-chip]")
+    .forEach((chip) => chip.remove());
+
+  selectedTags.forEach((tagValue) => {
+    const chip = document.createElement("span");
+    chip.className =
+      "inline-flex items-center gap-2 rounded-full bg-secondary-container px-3 py-2 text-xs font-semibold text-on-secondary-container";
+    chip.dataset.communityTagSelectedChip = "";
+    chip.dataset.tagValue = tagValue;
+    chip.innerHTML = `
+      <span>#${tagValue}</span>
+      <button type="button" class="rounded-full bg-black/10 px-2 py-0.5 text-[10px]" data-community-tag-remove>제거</button>
+    `;
+    if (emptyState instanceof HTMLElement) {
+      container.insertBefore(chip, emptyState);
+    } else {
+      container.appendChild(chip);
+    }
+  });
+
+  tagInput.value = selectedTags.join(", ");
+  syncCommunityTagEmptyState(container);
+  const searchInput = getCommunityTagSearchInput();
+  syncCommunityTagOptionVisibility(searchInput?.value || "", selectedTags);
+}
+
+function tryAddCommunityTag(rawValue) {
+  const tagInput = getCommunityTagInput();
+  const container = getCommunityTagSelectedContainer();
+  if (!tagInput || !container) {
+    return false;
+  }
+
+  const tagValue = normalizeCommunityTagValue(rawValue);
+  if (!tagValue) {
+    return false;
+  }
+
+  const selectedTags = getCommunitySelectedTags(tagInput);
+  if (
+    selectedTags.some((selectedTag) => selectedTag.toLowerCase() === tagValue.toLowerCase())
+  ) {
+    return false;
+  }
+
+  const maxSelected = Number.parseInt(container.dataset.communityTagMax || "5", 10);
+  if (selectedTags.length >= maxSelected) {
+    return false;
+  }
+
+  renderCommunitySelectedTags([...selectedTags, tagValue]);
+  const searchInput = getCommunityTagSearchInput();
+  if (searchInput) {
+    searchInput.value = "";
+  }
+  return true;
+}
+
+function initializeCommunityTagSelector() {
+  const tagInput = getCommunityTagInput();
+  if (!tagInput) {
+    return;
+  }
+  renderCommunitySelectedTags(getCommunitySelectedTags(tagInput));
+}
+
+function renderCommunitySelectedWikiDocuments(wikiDocuments) {
+  const container = getCommunityWikiSelectedContainer();
+  if (!container) {
+    return;
+  }
+
+  const lockedIds = getLockedWikiIds(container);
+  container.querySelectorAll("[data-community-wiki-chip]").forEach((chip) => {
+    if (!(chip instanceof HTMLElement)) {
+      return;
+    }
+    const wikiId = chip.dataset.wikiId?.trim();
+    if (wikiId && lockedIds.has(wikiId)) {
+      return;
+    }
+    chip.remove();
+  });
+
+  document.querySelectorAll("[data-community-wiki-result]").forEach((result) => {
+    if (!(result instanceof HTMLElement)) {
+      return;
+    }
+    const wikiId = result.dataset.wikiId?.trim();
+    if (wikiId && !lockedIds.has(wikiId)) {
+      syncCommunityWikiOptionState(wikiId, false);
+    }
+  });
+
+  wikiDocuments.forEach((wikiDocument) => {
+    const wikiId = `${wikiDocument.id || ""}`.trim();
+    const wikiTitle = `${wikiDocument.title || ""}`.trim();
+    const wikiSummary = `${wikiDocument.summary || ""}`.trim();
+    if (!wikiId || !wikiTitle || lockedIds.has(wikiId)) {
+      return;
+    }
+    appendCommunityWikiChip(container, wikiId, wikiTitle, wikiSummary);
+    syncCommunityWikiOptionState(wikiId, true);
+  });
+
+  updateCommunityWikiEmptyState(container);
+}
+
 document.body.addEventListener("click", (event) => {
-  const tagChip =
+  const draftLoad =
     event.target instanceof Element
-      ? event.target.closest("[data-community-tag-chip]")
+      ? event.target.closest("[data-community-draft-load]")
       : null;
-  if (!(tagChip instanceof HTMLElement)) {
+  if (draftLoad instanceof HTMLButtonElement) {
+    const payloadId = draftLoad.dataset.draftPayloadId?.trim();
+    const payloadElement = payloadId ? document.getElementById(payloadId) : null;
+    if (!payloadElement) {
+      return;
+    }
+
+    const payload = JSON.parse(payloadElement.textContent || "{}");
+    applyCommunityComposePayload(payload);
+
+    document.querySelectorAll("[data-community-draft-load]").forEach((button) => {
+      if (!(button instanceof HTMLButtonElement)) {
+        return;
+      }
+      button.classList.remove("border-primary/30", "bg-primary-container/40");
+      button.classList.add("border-transparent", "bg-white");
+    });
+    draftLoad.classList.remove("border-transparent", "bg-white");
+    draftLoad.classList.add("border-primary/30", "bg-primary-container/40");
     return;
   }
 
-  const tagInput = document.querySelector("[data-community-tag-input]");
-  if (!(tagInput instanceof HTMLInputElement)) {
+  const tagOption =
+    event.target instanceof Element
+      ? event.target.closest("[data-community-tag-option]")
+      : null;
+  if (tagOption instanceof HTMLElement) {
+    const tagValue = tagOption.dataset.tagValue?.trim();
+    if (tagValue) {
+      tryAddCommunityTag(tagValue);
+    }
     return;
   }
 
-  const tagValue = tagChip.dataset.tagValue?.trim();
+  const tagRemove =
+    event.target instanceof Element
+      ? event.target.closest("[data-community-tag-remove]")
+      : null;
+  if (!(tagRemove instanceof HTMLElement)) {
+    return;
+  }
+
+  const tagInput = getCommunityTagInput();
+  const chip = tagRemove.closest("[data-community-tag-selected-chip]");
+  if (!tagInput || !(chip instanceof HTMLElement)) {
+    return;
+  }
+
+  const tagValue = normalizeCommunityTagValue(chip.dataset.tagValue || "");
   if (!tagValue) {
     return;
   }
 
-  const currentValues = tagInput.value
-    .split(",")
-    .map((value) => value.trim())
-    .filter(Boolean);
-  if (currentValues.some((value) => value.toLowerCase() === tagValue.toLowerCase())) {
+  const nextTags = getCommunitySelectedTags(tagInput).filter(
+    (selectedTag) => selectedTag.toLowerCase() !== tagValue.toLowerCase(),
+  );
+  renderCommunitySelectedTags(nextTags);
+});
+
+document.body.addEventListener("input", (event) => {
+  const tagSearch =
+    event.target instanceof Element
+      ? event.target.closest("[data-community-tag-search]")
+      : null;
+  if (!(tagSearch instanceof HTMLInputElement)) {
     return;
   }
 
-  currentValues.push(tagValue);
-  tagInput.value = currentValues.join(", ");
-  tagInput.dispatchEvent(new Event("input", { bubbles: true }));
+  const tagInput = getCommunityTagInput();
+  if (!tagInput) {
+    return;
+  }
+  syncCommunityTagOptionVisibility(tagSearch.value, getCommunitySelectedTags(tagInput));
+});
+
+document.body.addEventListener("keydown", (event) => {
+  const tagSearch =
+    event.target instanceof Element
+      ? event.target.closest("[data-community-tag-search]")
+      : null;
+  if (!(tagSearch instanceof HTMLInputElement)) {
+    return;
+  }
+
+  if (event.key !== "Enter" && event.key !== ",") {
+    return;
+  }
+
+  event.preventDefault();
+  tryAddCommunityTag(tagSearch.value);
+});
+
+function getCommunityWikiSelectedContainer() {
+  const container = document.querySelector("[data-community-wiki-selected]");
+  return container instanceof HTMLElement ? container : null;
+}
+
+function getSelectedWikiIds(container) {
+  return Array.from(
+    container.querySelectorAll("[data-community-wiki-input]"),
+    (input) => input.value,
+  );
+}
+
+function getLockedWikiIds(container) {
+  return new Set(
+    (container.dataset.communityWikiLocked || "")
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+}
+
+function updateCommunityWikiEmptyState(container) {
+  const emptyState = container.querySelector("[data-community-wiki-empty]");
+  const hasChips = container.querySelector("[data-community-wiki-chip]");
+  if (!(emptyState instanceof HTMLElement)) {
+    return;
+  }
+  emptyState.classList.toggle("hidden", Boolean(hasChips));
+}
+
+function syncCommunityWikiOptionState(wikiId, isSelected) {
+  document
+    .querySelectorAll(`[data-community-wiki-result][data-wiki-id="${wikiId}"]`)
+    .forEach((result) => {
+      if (!(result instanceof HTMLElement)) {
+        return;
+      }
+      result.classList.toggle("border-primary/20", isSelected);
+      result.classList.toggle("bg-primary-container/40", isSelected);
+      result.classList.toggle("border-transparent", !isSelected);
+      result.classList.toggle("bg-white", !isSelected);
+      const label = result.querySelector("[data-community-wiki-option-label]");
+      if (label instanceof HTMLButtonElement) {
+        if (label.disabled) {
+          label.textContent = "기본 참조";
+          return;
+        }
+        label.textContent = isSelected ? "제거" : "추가";
+        label.classList.toggle("bg-red-100", isSelected);
+        label.classList.toggle("text-red-700", isSelected);
+        label.classList.toggle("bg-surface-container-high", !isSelected);
+        label.classList.toggle("text-primary", !isSelected);
+      }
+    });
+}
+
+function appendCommunityWikiChip(container, wikiId, wikiTitle, wikiSummary) {
+  const chip = document.createElement("span");
+  chip.className =
+    "inline-flex items-center gap-2 rounded-full bg-secondary-container px-3 py-2 text-xs font-semibold text-on-secondary-container";
+  chip.dataset.communityWikiChip = "";
+  chip.dataset.wikiId = wikiId;
+  chip.dataset.wikiTitle = wikiTitle;
+  chip.dataset.wikiSummary = wikiSummary;
+  chip.innerHTML = `
+    <input type="hidden" name="wiki_documents" value="${wikiId}" data-community-wiki-input>
+    <span>${wikiTitle}</span>
+    <button type="button" class="rounded-full bg-black/10 px-2 py-0.5 text-[10px]" data-community-wiki-remove>제거</button>
+  `;
+  container.appendChild(chip);
+}
+
+document.body.addEventListener("click", (event) => {
+  const wikiOption =
+    event.target instanceof Element
+      ? event.target.closest("[data-community-wiki-option]")
+      : null;
+  if (wikiOption instanceof HTMLElement) {
+    const container = getCommunityWikiSelectedContainer();
+    if (!container) {
+      return;
+    }
+
+    const wikiId = wikiOption.dataset.wikiId?.trim();
+    const wikiTitle = wikiOption.dataset.wikiTitle?.trim();
+    const wikiSummary = wikiOption.dataset.wikiSummary?.trim() || "";
+    if (!wikiId || !wikiTitle) {
+      return;
+    }
+
+    const selectedIds = getSelectedWikiIds(container);
+    const lockedIds = getLockedWikiIds(container);
+    const existingChip = container.querySelector(
+      `[data-community-wiki-chip][data-wiki-id="${wikiId}"]`,
+    );
+    if (existingChip instanceof HTMLElement) {
+      if (!lockedIds.has(wikiId)) {
+        existingChip.remove();
+        updateCommunityWikiEmptyState(container);
+        syncCommunityWikiOptionState(wikiId, false);
+      }
+      return;
+    }
+
+    const maxSelected = Number.parseInt(container.dataset.communityWikiMax || "10", 10);
+    if (selectedIds.length >= maxSelected) {
+      return;
+    }
+
+    appendCommunityWikiChip(container, wikiId, wikiTitle, wikiSummary);
+    updateCommunityWikiEmptyState(container);
+    syncCommunityWikiOptionState(wikiId, true);
+    return;
+  }
+
+  const wikiRemove =
+    event.target instanceof Element
+      ? event.target.closest("[data-community-wiki-remove]")
+      : null;
+  if (!(wikiRemove instanceof HTMLElement)) {
+    return;
+  }
+
+  const container = getCommunityWikiSelectedContainer();
+  const chip = wikiRemove.closest("[data-community-wiki-chip]");
+  if (!container || !(chip instanceof HTMLElement)) {
+    return;
+  }
+
+  const wikiId = chip.dataset.wikiId?.trim();
+  const lockedIds = getLockedWikiIds(container);
+  if (wikiId && lockedIds.has(wikiId)) {
+    return;
+  }
+  chip.remove();
+  updateCommunityWikiEmptyState(container);
+  if (wikiId) {
+    syncCommunityWikiOptionState(wikiId, false);
+  }
 });
 
 document.addEventListener("keydown", (event) => {
@@ -336,6 +758,7 @@ document.addEventListener("keydown", (event) => {
     return;
   }
   if (document.querySelector("[data-community-compose-modal].flex")) {
+    resetCommunityComposeModalState();
     setCommunityComposeModalOpen(false);
   }
   if (!document.querySelector("[data-admin-modal]")) {
@@ -488,6 +911,7 @@ async function syncBrowserTimezone() {
 void syncBrowserTimezone();
 initializeWikiToc();
 initializeCodeCopyButtons();
+initializeCommunityTagSelector();
 if (document.querySelector("[data-community-compose-modal].flex")) {
   document.body.classList.add("overflow-hidden");
 }

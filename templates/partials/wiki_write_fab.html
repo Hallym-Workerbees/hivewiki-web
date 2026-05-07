@@ -1,6 +1,7 @@
 <div class="pointer-events-none fixed bottom-6 right-6 z-30 lg:bottom-8 lg:right-10">
-    <a href="{{ compose_post_url|default:'/community/?compose=1' }}"
-       class="pointer-events-auto inline-flex items-center gap-3 rounded-full bg-stone-950 px-5 py-4 text-sm font-semibold text-stone-50 shadow-[0_18px_40px_rgba(28,25,23,0.18)] transition hover:-translate-y-0.5 hover:bg-stone-800">
+    <a href="{% if compose_open_url %}{{ compose_open_url }}{% elif compose_post_url %}{{ compose_post_url }}{% else %}/community/?compose=1{% endif %}"
+       class="pointer-events-auto inline-flex items-center gap-3 rounded-full bg-stone-950 px-5 py-4 text-sm font-semibold text-stone-50 shadow-[0_18px_40px_rgba(28,25,23,0.18)] transition hover:-translate-y-0.5 hover:bg-stone-800"
+       data-community-compose-open>
         <span class="flex h-10 w-10 items-center justify-center rounded-full bg-white/10">
             <svg class="h-5 w-5"
                  viewBox="0 0 24 24"

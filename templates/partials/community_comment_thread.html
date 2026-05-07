@@ -1,5 +1,6 @@
 {% load markdown_extras %}
-<article class="rounded-[1.5rem] bg-surface-container-lowest p-5">
+<article id="comment-{{ comment.id }}"
+         class="rounded-[1.5rem] bg-surface-container-lowest p-5">
     <div class="flex flex-wrap items-center gap-3 text-sm text-on-surface-variant">
         {% if comment.author_user and comment.author_user.profile_image %}
             <img src="{{ comment.author_user.profile_image }}"
@@ -17,33 +18,70 @@
               data-local-datetime="{{ comment.created_at|date:'c' }}"
               data-local-format="datetime">{{ comment.created_at|date:"Y.m.d H:i" }}</time>
     </div>
-    <div class="reading-prose prose prose-stone mt-4 max-w-none text-sm leading-7 text-on-surface">
-        {{ comment.content|render_markdown }}
-    </div>
-    <details class="mt-4 rounded-[1.25rem] bg-surface-container-high p-4"
-             {% if comment.id|stringformat:"s" in expanded_comment_ids or reply_target_id == comment.id|stringformat:"s" %}open{% endif %}>
-        <summary class="cursor-pointer text-sm font-semibold text-primary">답글 달기</summary>
+    {% if current_user and comment.author_user_id == current_user.id %}
+        <div class="mt-4 flex items-center gap-3">
+            <a href="{% url 'community_comment_edit' post.id comment.id %}"
+               class="text-sm font-semibold text-primary">댓글 수정</a>
+        </div>
+    {% endif %}
+    {% if editing_comment_id == comment.id|stringformat:"s" %}
         <form method="post"
-              action="{% url 'community_comment_create' post.id %}"
+              action="{% url 'community_comment_edit' post.id comment.id %}"
               class="mt-4 space-y-3">
             {% csrf_token %}
-            <input type="hidden" name="parent_comment_id" value="{{ comment.id }}">
-            {% if reply_target_id == comment.id|stringformat:"s" %}
-                {% for error in comment_form.content.errors %}<p class="text-sm text-red-700">{{ error }}</p>{% endfor %}
-            {% endif %}
+            {% include "partials/form_errors.html" with form=comment_edit_form %}
             <label class="block">
-                <span class="mb-2 block text-sm font-semibold">답글</span>
+                <span class="mb-2 block text-sm font-semibold">{{ comment_edit_form.content.label }}</span>
                 <textarea name="content"
-                          rows="3"
+                          rows="4"
                           class="w-full rounded-2xl border-stone-200 bg-white px-4 py-3 leading-7"
-                          placeholder="이 댓글에 이어서 답글을 남겨 보세요.">{% if reply_target_id == comment.id|stringformat:"s" %}{{ comment_form.content.value|default_if_none:'' }}{% endif %}</textarea>
+                          placeholder="댓글 내용을 수정해 보세요.">{{ comment_edit_form.content.value|default_if_none:'' }}</textarea>
             </label>
-            <button type="submit"
-                    class="inline-flex items-center justify-center rounded-xl bg-stone-950 px-4 py-2 text-sm font-bold text-stone-50">
-                답글 등록
-            </button>
+            <div class="flex items-center gap-3">
+                <button type="submit"
+                        class="inline-flex items-center justify-center rounded-xl bg-stone-950 px-4 py-2 text-sm font-bold text-stone-50">
+                    수정 저장
+                </button>
+                <a href="{{ post.get_absolute_url }}#comment-{{ comment.id }}"
+                   class="text-sm font-semibold text-on-surface-variant">취소</a>
+            </div>
         </form>
-    </details>
+    {% else %}
+        <div class="reading-prose prose prose-stone mt-4 max-w-none text-sm leading-7 text-on-surface">
+            {{ comment.content|render_markdown }}
+        </div>
+    {% endif %}
+    {% if current_user %}
+        <details class="mt-4 rounded-[1.25rem] bg-surface-container-high p-4"
+                 {% if comment.id|stringformat:"s" in expanded_comment_ids or reply_target_id == comment.id|stringformat:"s" %}open{% endif %}>
+            <summary class="cursor-pointer text-sm font-semibold text-primary">답글 달기</summary>
+            <form method="post"
+                  action="{% url 'community_comment_create' post.id %}"
+                  class="mt-4 space-y-3">
+                {% csrf_token %}
+                <input type="hidden" name="parent_comment_id" value="{{ comment.id }}">
+                {% if reply_target_id == comment.id|stringformat:"s" %}
+                    {% for error in comment_form.content.errors %}<p class="text-sm text-red-700">{{ error }}</p>{% endfor %}
+                {% endif %}
+                <label class="block">
+                    <span class="mb-2 block text-sm font-semibold">답글</span>
+                    <textarea name="content"
+                              rows="3"
+                              class="w-full rounded-2xl border-stone-200 bg-white px-4 py-3 leading-7"
+                              placeholder="이 댓글에 이어서 답글을 남겨 보세요.">{% if reply_target_id == comment.id|stringformat:"s" %}{{ comment_form.content.value|default_if_none:'' }}{% endif %}</textarea>
+                </label>
+                <button type="submit"
+                        class="inline-flex items-center justify-center rounded-xl bg-stone-950 px-4 py-2 text-sm font-bold text-stone-50">
+                    답글 등록
+                </button>
+            </form>
+        </details>
+    {% else %}
+        <div class="mt-4 text-sm font-semibold text-on-surface-variant">
+            <a href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}"
+               class="text-primary">로그인</a> 후 답글을 남길 수 있습니다.
+        </div>
+    {% endif %}
     {% if comment.child_comment_count %}
         <div class="mt-4">
             <button type="button"

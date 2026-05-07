@@ -7,9 +7,8 @@
             <span>HiveWiki</span>
         </div>
         <div class="flex flex-wrap items-center gap-4 text-sm">
-            <a href="{% if current_user %}{% url 'wiki_home' %}{% else %}{% url 'login' %}?next=/wiki/{% endif %}"
-               class="transition hover:text-on-surface">위키</a>
-            <a href="{% if current_user %}{% url 'community_list' %}{% else %}{% url 'login' %}?next=/community/{% endif %}"
+            <a href="{% url 'wiki_home' %}" class="transition hover:text-on-surface">위키</a>
+            <a href="{% url 'community_list' %}"
                class="transition hover:text-on-surface">커뮤니티</a>
             <a href="{% url 'integrated_search' %}"
                class="transition hover:text-on-surface">검색</a>

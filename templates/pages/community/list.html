@@ -85,9 +85,11 @@
             </span>
             <span class="flex flex-col items-start leading-tight">
                 <span>글쓰기</span>
-                <span class="text-xs font-medium text-stone-300">모달로 열기</span>
+                <span class="text-xs font-medium text-stone-300">질문이나 메모 남기기</span>
             </span>
         </a>
     </div>
-    {% include "partials/community_compose_modal.html" %}
+    {% if current_user %}
+        {% include "partials/community_compose_modal.html" %}
+    {% endif %}
 {% endblock app_content %}

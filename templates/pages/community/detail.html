@@ -36,6 +36,14 @@
                             <span class="rounded-full bg-surface-container-high px-3 py-1 text-xs font-semibold text-primary">#{{ tag.name }}</span>
                         {% endfor %}
                     </div>
+                    {% if current_user and post.author_user_id == current_user.id %}
+                        <div class="mt-5">
+                            <a href="{% url 'community_post_edit' post.id %}"
+                               class="inline-flex items-center justify-center rounded-full bg-surface-container-high px-4 py-2 text-sm font-semibold text-on-surface transition hover:bg-surface-container-highest">
+                                게시글 수정
+                            </a>
+                        </div>
+                    {% endif %}
                     {% if linked_wiki_documents %}
                         <section class="mt-6 rounded-[1.5rem] bg-surface-container-lowest p-5 ambient-shadow">
                             <div class="text-sm font-semibold text-primary">Linked Wiki</div>
@@ -58,28 +66,38 @@
                             <h2 class="mt-2 font-headline text-3xl font-black tracking-tight">댓글 {{ comment_total_count }}개</h2>
                         </div>
                     </div>
-                    <form method="post"
-                          action="{% url 'community_comment_create' post.id %}"
-                          class="mt-6 space-y-4 border-b border-outline-variant/70 pb-6">
-                        {% csrf_token %}
-                        {{ comment_form.parent_comment_id }}
-                        {% if not reply_target_id %}
-                            {% include "partials/form_errors.html" with form=comment_form %}
-                            {% include "partials/auth_field.html" with field=comment_form.content %}
-                        {% else %}
-                            <label class="block">
-                                <span class="mb-2 block text-sm font-semibold">{{ comment_form.content.label }}</span>
-                                <textarea name="content"
-                                          rows="4"
-                                          class="w-full rounded-2xl border-stone-200 bg-white px-4 py-3 leading-7"
-                                          placeholder="질문에 답하거나 논의를 이어가 보세요."></textarea>
-                            </label>
-                        {% endif %}
-                        <button type="submit"
-                                class="inline-flex items-center justify-center rounded-2xl bg-stone-950 px-5 py-3 text-sm font-bold text-stone-50">
-                            댓글 등록
-                        </button>
-                    </form>
+                    {% if current_user %}
+                        <form method="post"
+                              action="{% url 'community_comment_create' post.id %}"
+                              class="mt-6 space-y-4 border-b border-outline-variant/70 pb-6">
+                            {% csrf_token %}
+                            {{ comment_form.parent_comment_id }}
+                            {% if not reply_target_id %}
+                                {% include "partials/form_errors.html" with form=comment_form %}
+                                {% include "partials/auth_field.html" with field=comment_form.content %}
+                            {% else %}
+                                <label class="block">
+                                    <span class="mb-2 block text-sm font-semibold">{{ comment_form.content.label }}</span>
+                                    <textarea name="content"
+                                              rows="4"
+                                              class="w-full rounded-2xl border-stone-200 bg-white px-4 py-3 leading-7"
+                                              placeholder="질문에 답하거나 논의를 이어가 보세요."></textarea>
+                                </label>
+                            {% endif %}
+                            <button type="submit"
+                                    class="inline-flex items-center justify-center rounded-2xl bg-stone-950 px-5 py-3 text-sm font-bold text-stone-50">
+                                댓글 등록
+                            </button>
+                        </form>
+                    {% else %}
+                        <div class="mt-6 rounded-[1.5rem] border border-outline-variant/70 bg-surface-container-lowest p-5">
+                            <div class="text-sm leading-7 text-on-surface-variant">댓글 작성은 로그인 후 가능합니다.</div>
+                            <a href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}"
+                               class="mt-4 inline-flex items-center justify-center rounded-xl bg-stone-950 px-4 py-3 text-sm font-semibold text-stone-50">
+                                로그인하고 댓글 쓰기
+                            </a>
+                        </div>
+                    {% endif %}
                     <div class="mt-6 space-y-4">
                         {% for comment in comments %}
                             {% include "partials/community_comment_thread.html" %}
@@ -141,4 +159,7 @@
             </aside>
         </div>
     </section>
+    {% if current_user %}
+        {% include "partials/community_compose_modal.html" with compose_requested=compose_requested post_form=post_edit_form prefilled_wiki_document=None featured_wiki_documents=featured_wiki_documents selected_wiki_document_ids=selected_wiki_document_ids selected_wiki_documents=selected_wiki_documents locked_wiki_document_ids=locked_wiki_document_ids compose_wiki_search_url=compose_wiki_search_url compose_close_url=compose_close_url draft_posts=draft_posts active_draft_post=active_draft_post compose_title_eyebrow=compose_title_eyebrow compose_heading=compose_heading compose_description=compose_description compose_submit_label=compose_submit_label post_edit_submit_url=post_edit_submit_url compose_tag_options=compose_tag_options selected_tag_names=selected_tag_names %}
+    {% endif %}
 {% endblock app_content %}

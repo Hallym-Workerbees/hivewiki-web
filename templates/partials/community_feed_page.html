@@ -1,0 +1,12 @@
+{% for item in post_items %}
+    {% include "partials/post_card.html" %}
+{% endfor %}
+{% if next_feed_page_url %}
+    <div hx-get="{{ next_feed_page_url }}"
+         hx-trigger="revealed once"
+         hx-swap="outerHTML"
+         hx-target="this"
+         class="flex items-center justify-center py-6 text-sm font-medium text-on-surface-variant">
+        게시글을 더 불러오는 중...
+    </div>
+{% endif %}

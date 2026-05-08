@@ -1,0 +1,41 @@
+{% if current_user %}
+    <form method="post"
+          action="{% url 'community_post_like_toggle' post.id %}"
+          {% if htmx_enabled %}hx-post="{% url 'community_post_like_toggle' post.id %}" hx-target="this" hx-swap="outerHTML"{% endif %}>
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <button type="submit"
+                class="inline-flex min-w-[6.75rem] items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-semibold tabular-nums {% if post.is_liked_by_current_user %}bg-red-100 text-red-700{% else %}bg-surface-container-high text-on-surface{% endif %}">
+            <span class="inline-flex w-4 justify-center">
+                <svg class="h-4 w-4"
+                     viewBox="0 0 24 24"
+                     fill="{% if post.is_liked_by_current_user %}currentColor{% else %}none{% endif %}"
+                     stroke="currentColor"
+                     stroke-width="1.9"
+                     stroke-linecap="round"
+                     stroke-linejoin="round"
+                     aria-hidden="true">
+                    <path d="M12 20.5 4.9 13.9A4.7 4.7 0 0 1 11.6 7l.4.4.4-.4a4.7 4.7 0 0 1 6.7 6.9Z" />
+                </svg>
+            </span>
+            <span class="inline-flex min-w-[4.25rem] justify-start">좋아요 {{ post.like_count|default:"0" }}</span>
+        </button>
+    </form>
+{% else %}
+    <a href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}"
+       class="inline-flex min-w-[6.75rem] items-center justify-center gap-2 rounded-full bg-surface-container-high px-4 py-2 text-sm font-semibold tabular-nums text-on-surface">
+        <span class="inline-flex w-4 justify-center">
+            <svg class="h-4 w-4"
+                 viewBox="0 0 24 24"
+                 fill="none"
+                 stroke="currentColor"
+                 stroke-width="1.9"
+                 stroke-linecap="round"
+                 stroke-linejoin="round"
+                 aria-hidden="true">
+                <path d="M12 20.5 4.9 13.9A4.7 4.7 0 0 1 11.6 7l.4.4.4-.4a4.7 4.7 0 0 1 6.7 6.9Z" />
+            </svg>
+        </span>
+        <span class="inline-flex min-w-[4.25rem] justify-start">좋아요 {{ post.like_count|default:"0" }}</span>
+    </a>
+{% endif %}

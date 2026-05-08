@@ -4,10 +4,19 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
+from .community_content import (
+    extract_post_render_parts,
+)
+
 
 class TagType(models.TextChoices):
     USER = "user", "User"
     SYSTEM = "system", "System"
+
+
+class PostStatus(models.TextChoices):
+    PUBLISHED = "published", "Published"
+    DRAFT = "draft", "Draft"
 
 
 class IngestionJobStatus(models.TextChoices):
@@ -89,8 +98,9 @@ class Tag(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=50)
     slug = models.CharField(max_length=50, unique=True)
-    tag_type = models.CharField(
+    tag_type = PostgresEnumField(
         max_length=20,
+        enum_type="tag_type",
         choices=TagType.choices,
         default=TagType.USER,
     )
@@ -102,6 +112,252 @@ class Tag(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class Post(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    author_user = models.ForeignKey(
+        "accounts.HiveUser",
+        on_delete=models.SET_NULL,
+        related_name="posts",
+        db_column="author_user_id",
+        blank=True,
+        null=True,
+    )
+    content_markdown = models.TextField()
+    title_cache = models.CharField(max_length=255, blank=True, default="")
+    body_markdown_cache = models.TextField(blank=True, default="")
+    summary_cache = models.TextField(blank=True, default="")
+    status = PostgresEnumField(
+        max_length=20,
+        enum_type="post_status",
+        choices=PostStatus.choices,
+        default=PostStatus.PUBLISHED,
+    )
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+    updated_at = models.DateTimeField(default=timezone.now)
+    deleted_at = models.DateTimeField(blank=True, null=True)
+    likes = models.ManyToManyField(
+        "accounts.HiveUser",
+        through="PostLike",
+        related_name="liked_posts",
+    )
+    tags = models.ManyToManyField(
+        Tag,
+        through="PostTag",
+        related_name="posts",
+    )
+    wiki_documents = models.ManyToManyField(
+        "WikiDocument",
+        through="PostWikiDocument",
+        related_name="community_posts",
+    )
+
+    class Meta:
+        db_table = "posts"
+
+    def __str__(self):
+        return self.summary or str(self.pk)
+
+    def get_absolute_url(self):
+        from django.urls import reverse
+
+        return reverse("community_detail", kwargs={"post_id": self.pk})
+
+    def sync_cached_content_fields(self):
+        source = self.content_markdown or ""
+        title, body_markdown, summary = extract_post_render_parts(source)
+        self.title_cache = title
+        self.body_markdown_cache = body_markdown
+        self.summary_cache = summary
+        self.__dict__["_cached_content_markdown_source"] = source
+
+    def _cached_fields_match_source(self) -> bool:
+        return self.__dict__.get("_cached_content_markdown_source") == (
+            self.content_markdown or ""
+        )
+
+    def save(self, *args, **kwargs):
+        self.sync_cached_content_fields()
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None:
+            kwargs["update_fields"] = set(update_fields) | {
+                "title_cache",
+                "body_markdown_cache",
+                "summary_cache",
+            }
+        super().save(*args, **kwargs)
+
+    @property
+    def title(self) -> str:
+        if self.content_markdown and not self._cached_fields_match_source():
+            self.sync_cached_content_fields()
+        return self.title_cache
+
+    @property
+    def body_markdown(self) -> str:
+        if self.content_markdown and not self._cached_fields_match_source():
+            self.sync_cached_content_fields()
+        return self.body_markdown_cache
+
+    @property
+    def summary(self) -> str:
+        if self.content_markdown and not self._cached_fields_match_source():
+            self.sync_cached_content_fields()
+        return self.summary_cache
+
+    @property
+    def url(self) -> str:
+        return self.get_absolute_url()
+
+    @property
+    def author(self) -> str:
+        return self.author_user.username if self.author_user else "익명 사용자"
+
+
+class PostLike(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    post = models.ForeignKey(
+        Post,
+        on_delete=models.CASCADE,
+        related_name="post_likes",
+        db_column="post_id",
+    )
+    user = models.ForeignKey(
+        "accounts.HiveUser",
+        on_delete=models.CASCADE,
+        related_name="post_likes",
+        db_column="user_id",
+    )
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        db_table = "post_likes"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["post", "user"],
+                name="post_likes_post_id_user_id_key",
+            )
+        ]
+
+
+class Comment(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    post = models.ForeignKey(
+        Post,
+        on_delete=models.CASCADE,
+        related_name="comments",
+        db_column="post_id",
+    )
+    author_user = models.ForeignKey(
+        "accounts.HiveUser",
+        on_delete=models.SET_NULL,
+        related_name="comments",
+        db_column="author_user_id",
+        blank=True,
+        null=True,
+    )
+    parent_comment = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        related_name="replies",
+        db_column="parent_comment_id",
+        blank=True,
+        null=True,
+    )
+    content = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+    updated_at = models.DateTimeField(default=timezone.now)
+    deleted_at = models.DateTimeField(blank=True, null=True)
+    likes = models.ManyToManyField(
+        "accounts.HiveUser",
+        through="CommentLike",
+        related_name="liked_comments",
+    )
+
+    class Meta:
+        db_table = "comments"
+
+    def __str__(self):
+        return f"Comment<{self.pk}>"
+
+
+class CommentLike(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    comment = models.ForeignKey(
+        Comment,
+        on_delete=models.CASCADE,
+        related_name="comment_likes",
+        db_column="comment_id",
+    )
+    user = models.ForeignKey(
+        "accounts.HiveUser",
+        on_delete=models.CASCADE,
+        related_name="comment_likes",
+        db_column="user_id",
+    )
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        db_table = "comment_likes"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["comment", "user"],
+                name="comment_likes_comment_id_user_id_key",
+            )
+        ]
+
+
+class PostTag(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    post = models.ForeignKey(
+        Post,
+        on_delete=models.CASCADE,
+        related_name="post_tags",
+        db_column="post_id",
+    )
+    tag = models.ForeignKey(
+        Tag,
+        on_delete=models.CASCADE,
+        related_name="post_tags",
+        db_column="tag_id",
+    )
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        db_table = "post_tags"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["post", "tag"],
+                name="post_tags_post_id_tag_id_key",
+            )
+        ]
+
+
+class PostWikiDocument(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    post = models.ForeignKey(
+        Post,
+        on_delete=models.CASCADE,
+        related_name="post_wiki_documents",
+        db_column="post_id",
+    )
+    wiki_document = models.ForeignKey(
+        "WikiDocument",
+        on_delete=models.CASCADE,
+        related_name="post_wiki_documents",
+        db_column="wiki_document_id",
+    )
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        db_table = "post_wiki_documents"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["post", "wiki_document"],
+                name="post_wiki_documents_post_id_wiki_document_id_key",
+            )
+        ]
 
 
 class Source(models.Model):

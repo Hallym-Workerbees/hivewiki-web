@@ -18,8 +18,13 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import include, path
 
+from config.observability import liveness_probe, metrics_view, readiness_probe
+
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("livez/", liveness_probe),
+    path("readyz/", readiness_probe),
+    path("metrics/", metrics_view),
     path("", include("apps.accounts.urls")),
     path("", include("apps.core.urls")),
 ]

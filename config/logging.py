@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from asgiref.sync import iscoroutinefunction, markcoroutinefunction
 from django.conf import settings
 
+from config.observability import get_route_label, record_http_request
+
 _request_context: contextvars.ContextVar[dict[str, object] | None] = (
     contextvars.ContextVar(
         "request_context",
@@ -122,18 +124,31 @@ class RequestLoggingMiddleware:
         )
         return started_at, request_context_token, request_id
 
-    def _log_exception(self, started_at):
+    def _log_exception(self, request, started_at):
         duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
         set_request_context(status_code=500, duration_ms=duration_ms)
+        record_http_request(
+            method=request.method,
+            route=get_route_label(request),
+            status_code=500,
+            duration_seconds=duration_ms / 1000,
+        )
         self.logger.exception("request_failed")
 
     def _log_response(self, request, response, started_at, request_id):
         duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+        duration_seconds = duration_ms / 1000
         user_id = _get_authenticated_user_id(request)
         set_request_context(
             status_code=response.status_code,
             duration_ms=duration_ms,
             user_id=user_id,
+        )
+        record_http_request(
+            method=request.method,
+            route=get_route_label(request),
+            status_code=response.status_code,
+            duration_seconds=duration_seconds,
         )
         self.logger.info("request_complete")
         response["X-Request-ID"] = request_id
@@ -148,7 +163,7 @@ class RequestLoggingMiddleware:
         try:
             response = self.get_response(request)
         except Exception:
-            self._log_exception(started_at)
+            self._log_exception(request, started_at)
             raise
         else:
             return self._log_response(
@@ -166,7 +181,7 @@ class RequestLoggingMiddleware:
         try:
             response = await self.get_response(request)
         except Exception:
-            self._log_exception(started_at)
+            self._log_exception(request, started_at)
             raise
         else:
             return self._log_response(

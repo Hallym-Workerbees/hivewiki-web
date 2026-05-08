@@ -1,7 +1,7 @@
 # HiveWiki Web
 
 HiveWiki Web은 HiveWiki 프로젝트의 웹 애플리케이션입니다.  
-**Django** 기반으로 개발되며 **HTMX**, **Alpine.js**, **TailwindCSS**를 활용한 서버 렌더링 중심 구조를 목표로 합니다.
+**Django** 기반으로 개발되며 **htmx**, **Tailwind CSS**, 그리고 최소한의 커스텀 JavaScript를 활용한 서버 렌더링 중심 구조를 목표로 합니다.
 
 ## 개발 환경
 
@@ -35,10 +35,11 @@ hivewiki-web/
       views.py
   config/
     settings.py            # Django 설정, .env 로딩, 보안/세션/캐시 설정
-    urls.py                # 루트 URL 라우팅
+    urls.py                # 루트 URL 라우팅 및 운영 엔드포인트
+    observability.py       # liveness/readiness probe, Prometheus metrics
   static/
     css/app.css            # 공용 스타일
-    js/app.js              # 최소 클라이언트 스크립트
+    js/app.js              # 최소 클라이언트 스크립트와 timezone 동기화
   templates/
     layouts/               # public/app/auth 레이아웃
     pages/                 # 페이지 템플릿
@@ -57,12 +58,22 @@ cp .env.example .env
 uv run pre-commit install --hook-type pre-commit --hook-type commit-msg
 ```
 
+이 저장소에서는 `nix develop --command ...` 실행도 지원하며, 로컬 도구 버전을 맞춰야 할 때 권장합니다.
+
 로컬 PostgreSQL과 Valkey가 실행 중이라면 아래 명령으로 기본 검증과 서버 실행이 가능합니다.
 
 ```bash
 UV_CACHE_DIR=/tmp/hivewiki-uv-cache uv run python manage.py migrate
 UV_CACHE_DIR=/tmp/hivewiki-uv-cache uv run python manage.py test
 UV_CACHE_DIR=/tmp/hivewiki-uv-cache uv run python manage.py runserver
+```
+
+같은 작업을 devshell 안에서 실행하려면 아래처럼 사용할 수 있습니다.
+
+```bash
+nix develop --command python manage.py migrate
+nix develop --command python manage.py test
+nix develop --command python manage.py runserver
 ```
 
 이 프로젝트는 pre-commit hooks를 사용합니다.  
@@ -104,6 +115,8 @@ Commit message는 **영어로 작성해야 하며**, Conventional Commits 규칙
 - `DJANGO_SECURE_PROXY_SSL_HEADER`: 프록시 뒤에서 HTTPS 판별에 사용할 헤더
   예: `HTTP_X_FORWARDED_PROTO,https`
 - `SESSION_COOKIE_AGE`: 세션 유지 시간. 초 단위
+
+브라우저 timezone은 별도 엔드포인트 `POST /auth/timezone/`를 통해 세션 키 `django_timezone`에 저장됩니다. 이 값은 로그인/로그아웃 과정에서 세션이 재설정되어도 유지되며, 서버는 이를 사용해 사용자별 시간대를 활성화하고 클라이언트는 timezone-sensitive UI를 로컬 시간대로 다시 렌더링합니다.
 
 ### 로깅
 
@@ -150,6 +163,27 @@ OAuth callback URL은 현재 요청의 host/scheme를 기준으로 서버에서 
 - `POSTGRES_HOST`: PostgreSQL 호스트
 - `POSTGRES_PORT`: PostgreSQL 포트
 - `REDIS_URL`: Valkey/Redis URL. 세션 및 캐시에 사용
+
+## 운영 엔드포인트
+
+- `GET /livez/`: 프로세스 liveness 확인. 정상 시 `200 OK`
+- `GET /readyz/`: PostgreSQL과 Valkey readiness 확인. 하나라도 실패하면 `503 Service Unavailable`
+- `GET /metrics/`: Prometheus scrape endpoint
+
+`/metrics/`는 최소한 아래 메트릭을 제공합니다.
+
+- `hivewiki_up`
+- `hivewiki_process_start_time_seconds`
+- `hivewiki_build_info`
+- `hivewiki_readiness_check{check="database|cache"}`
+- `hivewiki_ready`
+- `hivewiki_http_requests_total{method,route}`
+- `hivewiki_http_responses_total{method,route,status_code}`
+- `hivewiki_http_request_duration_seconds_bucket{method,route,le}`
+- `hivewiki_http_request_duration_seconds_sum{method,route}`
+- `hivewiki_http_request_duration_seconds_count{method,route}`
+
+HTTP 메트릭의 `route` 라벨은 가능한 경우 raw path 대신 Django route pattern 기준으로 집계해 path parameter로 인한 cardinality 증가를 줄입니다.
 
 ## 배포 시 권장값
 

@@ -1,14 +1,13 @@
 from datetime import UTC
 
 from django import forms
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.utils.text import slugify
 
 from .community_content import build_post_markdown
 from .models import (
     Comment,
-    CommentStatus,
     Post,
     PostStatus,
     Source,
@@ -298,17 +297,24 @@ class PostForm(forms.Form):
         if not base_slug:
             raise forms.ValidationError("태그 슬러그를 생성할 수 없습니다.")
 
-        slug = base_slug
-        suffix = 2
-        while Tag.objects.filter(slug__iexact=slug).exists():
-            slug = f"{base_slug}-{suffix}"
-            suffix += 1
-
-        return Tag.objects.create(
-            name=name,
-            slug=slug,
-            tag_type=TagType.USER,
-        )
+        suffix = 1
+        while True:
+            slug = base_slug if suffix == 1 else f"{base_slug}-{suffix}"
+            try:
+                with transaction.atomic():
+                    return Tag.objects.create(
+                        name=name,
+                        slug=slug,
+                        tag_type=TagType.USER,
+                    )
+            except IntegrityError:
+                existing_tag = Tag.objects.filter(name__iexact=name).first()
+                if existing_tag is not None:
+                    return existing_tag
+                if Tag.objects.filter(slug__iexact=slug).exists():
+                    suffix += 1
+                    continue
+                raise
 
 
 class CommentForm(forms.ModelForm):
@@ -343,7 +349,6 @@ class CommentForm(forms.ModelForm):
         comment.post = post
         comment.author_user = author_user
         comment.parent_comment = parent_comment
-        comment.status = CommentStatus.PUBLISHED
         if commit:
             comment.save()
         return comment

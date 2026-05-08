@@ -5,9 +5,7 @@ from django.db import models
 from django.utils import timezone
 
 from .community_content import (
-    build_post_excerpt,
-    extract_post_title_and_body,
-    strip_post_leading_title,
+    extract_post_render_parts,
 )
 
 
@@ -19,12 +17,6 @@ class TagType(models.TextChoices):
 class PostStatus(models.TextChoices):
     PUBLISHED = "published", "Published"
     DRAFT = "draft", "Draft"
-    DELETED = "deleted", "Deleted"
-
-
-class CommentStatus(models.TextChoices):
-    PUBLISHED = "published", "Published"
-    DELETED = "deleted", "Deleted"
 
 
 class IngestionJobStatus(models.TextChoices):
@@ -133,6 +125,9 @@ class Post(models.Model):
         null=True,
     )
     content_markdown = models.TextField()
+    title_cache = models.CharField(max_length=255, blank=True, default="")
+    body_markdown_cache = models.TextField(blank=True, default="")
+    summary_cache = models.TextField(blank=True, default="")
     status = PostgresEnumField(
         max_length=20,
         enum_type="post_status",
@@ -141,6 +136,7 @@ class Post(models.Model):
     )
     created_at = models.DateTimeField(default=timezone.now, editable=False)
     updated_at = models.DateTimeField(default=timezone.now)
+    deleted_at = models.DateTimeField(blank=True, null=True)
     likes = models.ManyToManyField(
         "accounts.HiveUser",
         through="PostLike",
@@ -168,18 +164,47 @@ class Post(models.Model):
 
         return reverse("community_detail", kwargs={"post_id": self.pk})
 
+    def sync_cached_content_fields(self):
+        source = self.content_markdown or ""
+        title, body_markdown, summary = extract_post_render_parts(source)
+        self.title_cache = title
+        self.body_markdown_cache = body_markdown
+        self.summary_cache = summary
+        self.__dict__["_cached_content_markdown_source"] = source
+
+    def _cached_fields_match_source(self) -> bool:
+        return self.__dict__.get("_cached_content_markdown_source") == (
+            self.content_markdown or ""
+        )
+
+    def save(self, *args, **kwargs):
+        self.sync_cached_content_fields()
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None:
+            kwargs["update_fields"] = set(update_fields) | {
+                "title_cache",
+                "body_markdown_cache",
+                "summary_cache",
+            }
+        super().save(*args, **kwargs)
+
     @property
     def title(self) -> str:
-        title, _ = extract_post_title_and_body(self.content_markdown)
-        return title
+        if self.content_markdown and not self._cached_fields_match_source():
+            self.sync_cached_content_fields()
+        return self.title_cache
 
     @property
     def body_markdown(self) -> str:
-        return strip_post_leading_title(self.content_markdown)
+        if self.content_markdown and not self._cached_fields_match_source():
+            self.sync_cached_content_fields()
+        return self.body_markdown_cache
 
     @property
     def summary(self) -> str:
-        return build_post_excerpt(self.content_markdown)
+        if self.content_markdown and not self._cached_fields_match_source():
+            self.sync_cached_content_fields()
+        return self.summary_cache
 
     @property
     def url(self) -> str:
@@ -191,7 +216,7 @@ class Post(models.Model):
 
 
 class PostLike(models.Model):
-    pk = models.CompositePrimaryKey("post", "user")
+    id = models.BigAutoField(primary_key=True)
     post = models.ForeignKey(
         Post,
         on_delete=models.CASCADE,
@@ -208,6 +233,12 @@ class PostLike(models.Model):
 
     class Meta:
         db_table = "post_likes"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["post", "user"],
+                name="post_likes_post_id_user_id_key",
+            )
+        ]
 
 
 class Comment(models.Model):
@@ -234,13 +265,7 @@ class Comment(models.Model):
         blank=True,
         null=True,
     )
-    content = models.TextField(blank=True, null=True)
-    status = PostgresEnumField(
-        max_length=20,
-        enum_type="comment_status",
-        choices=CommentStatus.choices,
-        default=CommentStatus.PUBLISHED,
-    )
+    content = models.TextField(blank=True, default="")
     created_at = models.DateTimeField(default=timezone.now, editable=False)
     updated_at = models.DateTimeField(default=timezone.now)
     deleted_at = models.DateTimeField(blank=True, null=True)
@@ -258,7 +283,7 @@ class Comment(models.Model):
 
 
 class CommentLike(models.Model):
-    pk = models.CompositePrimaryKey("comment", "user")
+    id = models.BigAutoField(primary_key=True)
     comment = models.ForeignKey(
         Comment,
         on_delete=models.CASCADE,
@@ -275,10 +300,16 @@ class CommentLike(models.Model):
 
     class Meta:
         db_table = "comment_likes"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["comment", "user"],
+                name="comment_likes_comment_id_user_id_key",
+            )
+        ]
 
 
 class PostTag(models.Model):
-    pk = models.CompositePrimaryKey("post", "tag")
+    id = models.BigAutoField(primary_key=True)
     post = models.ForeignKey(
         Post,
         on_delete=models.CASCADE,
@@ -295,10 +326,16 @@ class PostTag(models.Model):
 
     class Meta:
         db_table = "post_tags"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["post", "tag"],
+                name="post_tags_post_id_tag_id_key",
+            )
+        ]
 
 
 class PostWikiDocument(models.Model):
-    pk = models.CompositePrimaryKey("post", "wiki_document")
+    id = models.BigAutoField(primary_key=True)
     post = models.ForeignKey(
         Post,
         on_delete=models.CASCADE,
@@ -315,6 +352,12 @@ class PostWikiDocument(models.Model):
 
     class Meta:
         db_table = "post_wiki_documents"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["post", "wiki_document"],
+                name="post_wiki_documents_post_id_wiki_document_id_key",
+            )
+        ]
 
 
 class Source(models.Model):

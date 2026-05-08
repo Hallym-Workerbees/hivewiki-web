@@ -1,15 +1,20 @@
+from unittest.mock import patch
+
+from django.db import IntegrityError
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from apps.accounts.models import HiveUser, UserStatus
 from apps.accounts.services import SESSION_USER_ID_KEY
+from apps.core.forms import PostForm
 from apps.core.models import (
     Comment,
     CommentLike,
-    CommentStatus,
     Post,
     PostLike,
     PostStatus,
+    Tag,
+    TagType,
 )
 from apps.core.views import _community_visible_posts_queryset
 
@@ -49,14 +54,12 @@ class CommunityViewTests(TestCase):
             post=post,
             author_user=self.user,
             content="최상위 댓글",
-            status=CommentStatus.PUBLISHED,
         )
         child_comment = Comment.objects.create(
             post=post,
             author_user=self.other_user,
             parent_comment=root_comment,
             content="중첩 댓글",
-            status=CommentStatus.PUBLISHED,
         )
 
         response = self.client.post(
@@ -87,21 +90,18 @@ class CommunityViewTests(TestCase):
             post=post,
             author_user=self.user,
             content="루트 댓글",
-            status=CommentStatus.PUBLISHED,
         )
         child_comment = Comment.objects.create(
             post=post,
             author_user=self.other_user,
             parent_comment=root_comment,
             content="1차 답글",
-            status=CommentStatus.PUBLISHED,
         )
         grandchild_comment = Comment.objects.create(
             post=post,
             author_user=self.user,
             parent_comment=child_comment,
             content="2차 답글",
-            status=CommentStatus.PUBLISHED,
         )
 
         response = self.client.get(
@@ -194,7 +194,6 @@ class CommunityViewTests(TestCase):
             post=post,
             author_user=self.user,
             content="기존 댓글",
-            status=CommentStatus.PUBLISHED,
         )
 
         get_response = self.client.get(
@@ -241,6 +240,29 @@ class CommunityViewTests(TestCase):
         self.assertNotContains(list_response, "임시 게시글")
         self.assertContains(detail_response, "로그인하고 댓글 쓰기")
 
+    def test_soft_deleted_post_is_hidden_from_feed(self):
+        visible_post = Post.objects.create(
+            author_user=self.user,
+            content_markdown="보이는 글",
+            status=PostStatus.PUBLISHED,
+        )
+        Post.objects.create(
+            author_user=self.user,
+            content_markdown="숨겨진 글",
+            status=PostStatus.PUBLISHED,
+            deleted_at=timezone.now(),
+        )
+
+        response = self.client.get("/community/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "보이는 글")
+        self.assertNotContains(response, "숨겨진 글")
+        self.assertEqual(
+            list(_community_visible_posts_queryset(user=self.user)),
+            [visible_post],
+        )
+
     def test_user_can_toggle_post_like(self):
         post = Post.objects.create(
             author_user=self.other_user,
@@ -272,7 +294,6 @@ class CommunityViewTests(TestCase):
             post=post,
             author_user=self.other_user,
             content="좋아요 받을 댓글",
-            status=CommentStatus.PUBLISHED,
         )
 
         like_response = self.client.post(
@@ -285,3 +306,51 @@ class CommunityViewTests(TestCase):
         self.assertTrue(
             CommentLike.objects.filter(comment=comment, user=self.user).exists()
         )
+
+    def test_soft_deleted_comment_is_excluded_from_detail_count(self):
+        post = Post.objects.create(
+            author_user=self.user,
+            content_markdown="댓글 카운트 포스트",
+            status=PostStatus.PUBLISHED,
+        )
+        Comment.objects.create(
+            post=post,
+            author_user=self.user,
+            content="보이는 댓글",
+        )
+        Comment.objects.create(
+            post=post,
+            author_user=self.other_user,
+            content="숨겨진 댓글",
+            deleted_at=timezone.now(),
+        )
+
+        response = self.client.get(f"/community/{post.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "댓글 1개")
+        self.assertContains(response, "보이는 댓글")
+        self.assertNotContains(response, "숨겨진 댓글")
+
+    def test_post_form_retries_when_tag_slug_is_taken_during_create(self):
+        form = PostForm()
+        real_create = Tag.objects.create
+        create_call_count = 0
+
+        def create_with_race(**kwargs):
+            nonlocal create_call_count
+            create_call_count += 1
+            if create_call_count == 1:
+                real_create(
+                    name="기존 검색 태그",
+                    slug=kwargs["slug"],
+                    tag_type=TagType.USER,
+                )
+                raise IntegrityError("duplicate key value violates unique constraint")
+            return real_create(**kwargs)
+
+        with patch("apps.core.forms.Tag.objects.create", side_effect=create_with_race):
+            tag = form._get_or_create_tag("검색")
+
+        self.assertEqual(tag.name, "검색")
+        self.assertEqual(tag.slug, "검색-2")

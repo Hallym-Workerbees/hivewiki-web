@@ -21,7 +21,6 @@ from .markdown_rendering import get_cached_revision_render
 from .models import (
     Comment,
     CommentLike,
-    CommentStatus,
     IngestionJob,
     Post,
     PostLike,
@@ -368,7 +367,7 @@ def community_comment_create(request, post_id):
         parent_comment = get_object_or_404(
             Comment.objects.filter(
                 post=post,
-                status=CommentStatus.PUBLISHED,
+                deleted_at__isnull=True,
             ),
             pk=parent_comment_id,
         )
@@ -401,7 +400,7 @@ def community_comment_like_toggle(request, post_id, comment_id):
         _community_visible_posts_queryset(user=request.current_user), pk=post_id
     )
     comment = get_object_or_404(
-        Comment.objects.filter(post=post, status=CommentStatus.PUBLISHED),
+        Comment.objects.filter(post=post, deleted_at__isnull=True),
         pk=comment_id,
     )
     like = CommentLike.objects.filter(comment=comment, user=request.current_user)
@@ -438,7 +437,7 @@ def community_comment_edit(request, post_id, comment_id):
     comment = get_object_or_404(
         Comment.objects.filter(
             post=post,
-            status=CommentStatus.PUBLISHED,
+            deleted_at__isnull=True,
             author_user=request.current_user,
         ),
         pk=comment_id,
@@ -479,7 +478,7 @@ def community_comment_children(request, post_id, comment_id):
         _community_visible_posts_queryset(user=request.current_user), pk=post_id
     )
     parent_comment = get_object_or_404(
-        Comment.objects.filter(post=post, status=CommentStatus.PUBLISHED),
+        Comment.objects.filter(post=post, deleted_at__isnull=True),
         pk=comment_id,
     )
     comments = _get_child_comments(parent_comment)
@@ -737,13 +736,13 @@ def _community_visible_posts_queryset(
         visible_filter |= Q(author_user=user, status=PostStatus.DRAFT)
 
     queryset = (
-        Post.objects.filter(visible_filter)
+        Post.objects.filter(visible_filter, deleted_at__isnull=True)
         .select_related("author_user")
         .prefetch_related("tags", "wiki_documents")
         .annotate(
             comment_count=Count(
                 "comments",
-                filter=Q(comments__status=CommentStatus.PUBLISHED),
+                filter=Q(comments__deleted_at__isnull=True),
                 distinct=True,
             ),
             like_count=Count("post_likes__user", distinct=True),
@@ -757,13 +756,13 @@ def _community_visible_posts_queryset(
 
 def _community_hot_posts_queryset():
     return (
-        Post.objects.filter(status=PostStatus.PUBLISHED)
+        Post.objects.filter(status=PostStatus.PUBLISHED, deleted_at__isnull=True)
         .select_related("author_user")
         .prefetch_related("tags", "wiki_documents")
         .annotate(
             comment_count=Count(
                 "comments",
-                filter=Q(comments__status=CommentStatus.PUBLISHED),
+                filter=Q(comments__deleted_at__isnull=True),
                 distinct=True,
             ),
             like_count=Count("post_likes__user", distinct=True),
@@ -774,10 +773,16 @@ def _community_hot_posts_queryset():
 
 def _community_tag_queryset():
     return (
-        Tag.objects.filter(posts__status=PostStatus.PUBLISHED)
+        Tag.objects.filter(
+            posts__status=PostStatus.PUBLISHED, posts__deleted_at__isnull=True
+        )
         .annotate(
             published_post_count=Count(
-                "posts", filter=Q(posts__status=PostStatus.PUBLISHED)
+                "posts",
+                filter=Q(
+                    posts__status=PostStatus.PUBLISHED,
+                    posts__deleted_at__isnull=True,
+                ),
             )
         )
         .order_by("-published_post_count", "name")
@@ -884,6 +889,7 @@ def _community_user_draft_queryset(user):
         Post.objects.filter(
             author_user=user,
             status=PostStatus.DRAFT,
+            deleted_at__isnull=True,
         )
         .prefetch_related("tags", "wiki_documents")
         .order_by("-updated_at", "-created_at", "-id")
@@ -990,7 +996,7 @@ def _build_community_detail_context(
             break
     comment_total_count = Comment.objects.filter(
         post=post,
-        status=CommentStatus.PUBLISHED,
+        deleted_at__isnull=True,
     ).count()
     return {
         "page_heading": "Community",
@@ -1045,7 +1051,7 @@ def _get_top_level_comments(post):
         .filter(
             post=post,
             parent_comment__isnull=True,
-            status=CommentStatus.PUBLISHED,
+            deleted_at__isnull=True,
         )
         .order_by("created_at")
     )
@@ -1056,7 +1062,7 @@ def _get_comment_tree(post):
         _comment_queryset()
         .filter(
             post=post,
-            status=CommentStatus.PUBLISHED,
+            deleted_at__isnull=True,
         )
         .order_by("created_at")
     )
@@ -1081,7 +1087,7 @@ def _get_child_comments(parent_comment):
         _comment_queryset()
         .filter(
             parent_comment=parent_comment,
-            status=CommentStatus.PUBLISHED,
+            deleted_at__isnull=True,
         )
         .order_by("created_at")
     )
@@ -1092,7 +1098,7 @@ def _comment_queryset():
         like_count=Count("comment_likes__user", distinct=True),
         child_comment_count=Count(
             "replies",
-            filter=Q(replies__status=CommentStatus.PUBLISHED),
+            filter=Q(replies__deleted_at__isnull=True),
             distinct=True,
         ),
     )
@@ -1106,7 +1112,7 @@ def _paginate_community_posts(queryset, *, page_number):
 def _get_comment_ancestor_ids(post, comment_id):
     comments = Comment.objects.filter(
         post=post,
-        status=CommentStatus.PUBLISHED,
+        deleted_at__isnull=True,
     ).values("id", "parent_comment_id")
     parent_by_id = {
         str(comment["id"]): (

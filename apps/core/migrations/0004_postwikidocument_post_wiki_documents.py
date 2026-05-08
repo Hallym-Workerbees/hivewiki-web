@@ -7,6 +7,8 @@ import django.utils.timezone
 from django.db import migrations, models
 
 WIKI_LINK_RE = re.compile(r"/wiki/(?P<slug>[-\w]+)/")
+POST_ITERATOR_CHUNK_SIZE = 1000
+THROUGH_BULK_CREATE_BATCH_SIZE = 500
 
 
 def backfill_post_wiki_documents(apps, schema_editor):
@@ -15,29 +17,41 @@ def backfill_post_wiki_documents(apps, schema_editor):
     WikiDocument = apps.get_model("core", "WikiDocument")
 
     documents_by_slug = {
-        document.slug: document.id for document in WikiDocument.objects.all()
+        document.slug: document.id
+        for document in WikiDocument.objects.only("id", "slug")
     }
     through_rows = []
-    seen_pairs = set()
-    for post in Post.objects.all().iterator():
+    posts = Post.objects.filter(content_markdown__contains="/wiki/").only(
+        "id", "content_markdown"
+    )
+    for post in posts.iterator(chunk_size=POST_ITERATOR_CHUNK_SIZE):
+        seen_wiki_document_ids = set()
         for match in WIKI_LINK_RE.finditer(post.content_markdown or ""):
             slug = match.group("slug")
             wiki_document_id = documents_by_slug.get(slug)
-            if wiki_document_id is None:
+            if wiki_document_id is None or wiki_document_id in seen_wiki_document_ids:
                 continue
-            pair = (post.id, wiki_document_id)
-            if pair in seen_pairs:
-                continue
-            seen_pairs.add(pair)
+            seen_wiki_document_ids.add(wiki_document_id)
             through_rows.append(
                 PostWikiDocument(
                     post_id=post.id,
                     wiki_document_id=wiki_document_id,
                 )
             )
+            if len(through_rows) >= THROUGH_BULK_CREATE_BATCH_SIZE:
+                PostWikiDocument.objects.bulk_create(
+                    through_rows,
+                    batch_size=THROUGH_BULK_CREATE_BATCH_SIZE,
+                    ignore_conflicts=True,
+                )
+                through_rows = []
 
     if through_rows:
-        PostWikiDocument.objects.bulk_create(through_rows, ignore_conflicts=True)
+        PostWikiDocument.objects.bulk_create(
+            through_rows,
+            batch_size=THROUGH_BULK_CREATE_BATCH_SIZE,
+            ignore_conflicts=True,
+        )
 
 
 def noop_reverse(apps, schema_editor):

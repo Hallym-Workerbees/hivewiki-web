@@ -1,11 +1,15 @@
+from unittest.mock import patch
+
 from django.test import SimpleTestCase
 
 from apps.core.community_content import (
     build_post_excerpt,
     build_post_markdown,
+    extract_post_render_parts,
     extract_post_title_and_body,
     strip_post_leading_title,
 )
+from apps.core.models import Post
 
 
 class CommunityContentTests(SimpleTestCase):
@@ -35,3 +39,44 @@ class CommunityContentTests(SimpleTestCase):
         body = strip_post_leading_title("# 예전 제목\n\n본문만 보여야 합니다.")
 
         self.assertEqual(body, "본문만 보여야 합니다.")
+
+    def test_extract_post_render_parts_returns_title_body_and_excerpt(self):
+        title, body, excerpt = extract_post_render_parts(
+            "# 문서화 대상 정리\n\n반복되는 질문과 운영 이슈를 모아 위키 후보를 고릅니다."
+        )
+
+        self.assertEqual(title, "문서화 대상 정리")
+        self.assertEqual(body, "반복되는 질문과 운영 이슈를 모아 위키 후보를 고릅니다.")
+        self.assertEqual(
+            excerpt, "반복되는 질문과 운영 이슈를 모아 위키 후보를 고릅니다."
+        )
+
+    def test_post_render_properties_share_cached_parse_result(self):
+        post = Post(content_markdown="# 제목\n\n본문")
+
+        with patch(
+            "apps.core.models.extract_post_render_parts",
+            return_value=("제목", "본문", "요약"),
+        ) as extract_parts:
+            self.assertEqual(post.title, "제목")
+            self.assertEqual(post.body_markdown, "본문")
+            self.assertEqual(post.summary, "요약")
+            self.assertEqual(post.summary, "요약")
+
+        extract_parts.assert_called_once_with("# 제목\n\n본문")
+
+    def test_post_render_properties_recompute_when_content_changes(self):
+        post = Post(content_markdown="첫 본문")
+
+        with patch(
+            "apps.core.models.extract_post_render_parts",
+            side_effect=[
+                ("첫 제목", "첫 본문", "첫 요약"),
+                ("두 번째 제목", "두 번째 본문", "두 번째 요약"),
+            ],
+        ) as extract_parts:
+            self.assertEqual(post.summary, "첫 요약")
+            post.content_markdown = "두 번째 본문"
+            self.assertEqual(post.summary, "두 번째 요약")
+
+        self.assertEqual(extract_parts.call_count, 2)

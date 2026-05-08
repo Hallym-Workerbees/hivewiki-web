@@ -45,6 +45,20 @@ def strip_post_leading_title(content_markdown: str) -> str:
     return body_markdown or content_markdown.strip()
 
 
+def extract_post_render_parts(
+    content_markdown: str, *, excerpt_max_length: int = 180
+) -> tuple[str, str, str]:
+    title, body_markdown = extract_post_title_and_body(content_markdown)
+    normalized_content = content_markdown.strip() if content_markdown else ""
+    display_body = body_markdown or normalized_content
+    plain_text = _normalize_line(_plain_text(display_body))
+    if len(plain_text) <= excerpt_max_length:
+        excerpt = plain_text
+    else:
+        excerpt = plain_text[: excerpt_max_length - 1].rstrip() + "…"
+    return title, display_body, excerpt
+
+
 def extract_linked_wiki_slugs(content_markdown: str) -> list[str]:
     if not content_markdown:
         return []
@@ -61,12 +75,10 @@ def extract_linked_wiki_slugs(content_markdown: str) -> list[str]:
 
 
 def build_post_excerpt(content_markdown: str, *, max_length: int = 180) -> str:
-    _, body_markdown = extract_post_title_and_body(content_markdown)
-    source_text = body_markdown or content_markdown
-    plain_text = _normalize_line(_plain_text(source_text))
-    if len(plain_text) <= max_length:
-        return plain_text
-    return plain_text[: max_length - 1].rstrip() + "…"
+    _, _, excerpt = extract_post_render_parts(
+        content_markdown, excerpt_max_length=max_length
+    )
+    return excerpt
 
 
 def _plain_text(value: str) -> str:

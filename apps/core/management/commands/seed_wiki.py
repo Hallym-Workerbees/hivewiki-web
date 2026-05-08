@@ -6,7 +6,6 @@ from apps.accounts.models import HiveUser, UserStatus
 from apps.core.models import (
     ChunkEmbedding,
     Comment,
-    CommentStatus,
     Post,
     PostStatus,
     PostTag,
@@ -570,7 +569,6 @@ class Command(BaseCommand):
                     author_user=comment_author,
                     content=comment_seed["content"],
                     defaults={
-                        "status": CommentStatus.PUBLISHED,
                         "updated_at": timezone.now(),
                     },
                 )

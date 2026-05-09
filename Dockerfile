@@ -15,6 +15,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY . .
 RUN uv sync --frozen --no-dev --no-install-project
+RUN uv run python manage.py collectstatic --noinput
 
 USER app
 

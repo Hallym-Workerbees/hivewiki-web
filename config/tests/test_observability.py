@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 from django.test import SimpleTestCase
 
-from config.observability import reset_metrics
+from config.observability import record_http_request, reset_metrics
 
 
 class ObservabilityViewsTests(SimpleTestCase):
@@ -44,10 +44,7 @@ class ObservabilityViewsTests(SimpleTestCase):
         response = self.client.get("/metrics/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            response["Content-Type"],
-            "text/plain; version=0.0.4; charset=utf-8",
-        )
+        self.assertTrue(response["Content-Type"].startswith("text/plain"))
         content = response.content.decode()
         self.assertIn(
             "# HELP hivewiki_up Whether the Django process is running.", content
@@ -60,18 +57,32 @@ class ObservabilityViewsTests(SimpleTestCase):
     def test_metrics_view_includes_http_request_metrics(self, run_readiness_checks):
         run_readiness_checks.return_value = {"database": True, "cache": True}
 
-        self.client.get("/livez/")
+        record_http_request("GET", "/dashboard/", 200, 0.1)
         response = self.client.get("/metrics/")
 
         content = response.content.decode()
         self.assertIn(
-            'hivewiki_http_requests_total{method="GET",route="/livez/"} 1', content
-        )
-        self.assertIn(
-            'hivewiki_http_responses_total{method="GET",route="/livez/",status_code="200"} 1',
+            'hivewiki_http_requests_total{method="GET",route="/dashboard/"} 1.0',
             content,
         )
         self.assertIn(
-            'hivewiki_http_request_duration_seconds_count{method="GET",route="/livez/"} 1',
+            'hivewiki_http_responses_total{method="GET",route="/dashboard/",status_code="200"} 1.0',
             content,
         )
+        self.assertIn(
+            'hivewiki_http_request_duration_seconds_count{method="GET",route="/dashboard/"} 1.0',
+            content,
+        )
+        self.assertNotIn('route="/metrics/"', content)
+        self.assertNotIn('route="/readyz/"', content)
+
+    @patch("config.observability.run_readiness_checks")
+    def test_metrics_view_caches_readiness_checks_between_scrapes(
+        self, run_readiness_checks
+    ):
+        run_readiness_checks.return_value = {"database": True, "cache": True}
+
+        self.client.get("/metrics/")
+        self.client.get("/metrics/")
+
+        self.assertEqual(run_readiness_checks.call_count, 1)

@@ -1,3 +1,4 @@
+import os
 import platform
 import threading
 import time
@@ -7,9 +8,22 @@ from django.core.cache import cache
 from django.db import connections
 from django.db.utils import DatabaseError
 from django.http import HttpResponse
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    REGISTRY,
+    Counter,
+    Histogram,
+    generate_latest,
+)
+
+try:
+    from prometheus_client import CollectorRegistry, multiprocess
+except ImportError:  # pragma: no cover
+    CollectorRegistry = None
+    multiprocess = None
 
 PROCESS_START_TIME = time.time()
-PROMETHEUS_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
+METRICS_READINESS_CACHE_TTL_SECONDS = 15
 REQUEST_DURATION_BUCKETS = (
     0.005,
     0.01,
@@ -23,6 +37,7 @@ REQUEST_DURATION_BUCKETS = (
     5.0,
     10.0,
 )
+EXCLUDED_REQUEST_METRIC_ROUTES = frozenset(("/livez/", "/readyz/", "/metrics/"))
 
 try:
     APP_VERSION = metadata.version("hivewiki-web")
@@ -31,9 +46,55 @@ except metadata.PackageNotFoundError:
 
 
 _metrics_lock = threading.Lock()
-_http_requests_total = {}
-_http_responses_total = {}
-_http_request_duration_seconds = {}
+_registered_collectors = []
+_http_requests_total = None
+_http_responses_total = None
+_http_request_duration_seconds = None
+
+_readiness_cache_lock = threading.Lock()
+_readiness_cache_checks = None
+_readiness_cache_expires_at = 0.0
+
+
+def _initialize_metrics():
+    global _http_request_duration_seconds
+    global _http_requests_total
+    global _http_responses_total
+
+    with _metrics_lock:
+        for collector in _registered_collectors:
+            try:
+                REGISTRY.unregister(collector)
+            except KeyError:
+                continue
+        _registered_collectors.clear()
+
+        _http_requests_total = Counter(
+            "hivewiki_http_requests_total",
+            "Total number of HTTP requests received.",
+            ("method", "route"),
+        )
+        _http_responses_total = Counter(
+            "hivewiki_http_responses_total",
+            "Total number of HTTP responses sent.",
+            ("method", "route", "status_code"),
+        )
+        _http_request_duration_seconds = Histogram(
+            "hivewiki_http_request_duration_seconds",
+            "HTTP request latency in seconds.",
+            ("method", "route"),
+            buckets=REQUEST_DURATION_BUCKETS,
+        )
+        _registered_collectors.extend(
+            [
+                _http_requests_total,
+                _http_responses_total,
+                _http_request_duration_seconds,
+            ]
+        )
+
+
+_initialize_metrics()
 
 
 def liveness_probe(_request):
@@ -51,39 +112,50 @@ def readiness_probe(_request):
 
 
 def metrics_view(_request):
-    checks = run_readiness_checks()
-    return HttpResponse(render_metrics(checks), content_type=PROMETHEUS_CONTENT_TYPE)
+    checks = get_cached_readiness_checks()
+    content = render_runtime_metrics(checks) + get_http_metrics_output()
+    return HttpResponse(content, content_type=CONTENT_TYPE_LATEST)
 
 
 def record_http_request(method, route, status_code, duration_seconds):
-    request_key = (method, route)
-    response_key = (method, route, str(status_code))
+    if route in EXCLUDED_REQUEST_METRIC_ROUTES:
+        return
 
-    with _metrics_lock:
-        _http_requests_total[request_key] = _http_requests_total.get(request_key, 0) + 1
-        _http_responses_total[response_key] = (
-            _http_responses_total.get(response_key, 0) + 1
-        )
-
-        bucket_counts, total_sum, total_count = _http_request_duration_seconds.get(
-            request_key,
-            ({bucket: 0 for bucket in REQUEST_DURATION_BUCKETS}, 0.0, 0),
-        )
-        for bucket in REQUEST_DURATION_BUCKETS:
-            if duration_seconds <= bucket:
-                bucket_counts[bucket] += 1
-        _http_request_duration_seconds[request_key] = (
-            bucket_counts,
-            total_sum + duration_seconds,
-            total_count + 1,
-        )
+    _http_requests_total.labels(method=method, route=route).inc()
+    _http_responses_total.labels(
+        method=method,
+        route=route,
+        status_code=str(status_code),
+    ).inc()
+    _http_request_duration_seconds.labels(method=method, route=route).observe(
+        duration_seconds
+    )
 
 
 def reset_metrics():
-    with _metrics_lock:
-        _http_requests_total.clear()
-        _http_responses_total.clear()
-        _http_request_duration_seconds.clear()
+    global _readiness_cache_checks
+    global _readiness_cache_expires_at
+
+    _initialize_metrics()
+    with _readiness_cache_lock:
+        _readiness_cache_checks = None
+        _readiness_cache_expires_at = 0.0
+
+
+def get_cached_readiness_checks():
+    global _readiness_cache_checks
+    global _readiness_cache_expires_at
+
+    now = time.monotonic()
+    with _readiness_cache_lock:
+        if _readiness_cache_checks is not None and now < _readiness_cache_expires_at:
+            return dict(_readiness_cache_checks)
+
+    checks = run_readiness_checks()
+    with _readiness_cache_lock:
+        _readiness_cache_checks = dict(checks)
+        _readiness_cache_expires_at = now + METRICS_READINESS_CACHE_TTL_SECONDS
+    return checks
 
 
 def run_readiness_checks():
@@ -120,7 +192,7 @@ def check_cache():
     return cached_value == value
 
 
-def render_metrics(checks):
+def render_runtime_metrics(checks):
     lines = [
         "# HELP hivewiki_up Whether the Django process is running.",
         "# TYPE hivewiki_up gauge",
@@ -147,56 +219,27 @@ def render_metrics(checks):
             "# HELP hivewiki_ready Whether the application is ready to serve traffic.",
             "# TYPE hivewiki_ready gauge",
             f"hivewiki_ready {overall_ready}",
-            "# HELP hivewiki_http_requests_total Total number of HTTP requests received.",
-            "# TYPE hivewiki_http_requests_total counter",
         ]
     )
-
-    with _metrics_lock:
-        request_items = sorted(_http_requests_total.items())
-        response_items = sorted(_http_responses_total.items())
-        duration_items = sorted(_http_request_duration_seconds.items())
-
-    for (method, route), count in request_items:
-        labels = _format_labels(method=method, route=route)
-        lines.append(f"hivewiki_http_requests_total{labels} {count}")
-
-    lines.extend(
-        [
-            "# HELP hivewiki_http_responses_total Total number of HTTP responses sent.",
-            "# TYPE hivewiki_http_responses_total counter",
-        ]
-    )
-    for (method, route, status_code), count in response_items:
-        labels = _format_labels(method=method, route=route, status_code=status_code)
-        lines.append(f"hivewiki_http_responses_total{labels} {count}")
-
-    lines.extend(
-        [
-            "# HELP hivewiki_http_request_duration_seconds HTTP request latency in seconds.",
-            "# TYPE hivewiki_http_request_duration_seconds histogram",
-        ]
-    )
-    for (method, route), (bucket_counts, total_sum, total_count) in duration_items:
-        labels = _format_labels(method=method, route=route)
-        for bucket in REQUEST_DURATION_BUCKETS:
-            bucket_labels = _format_labels(method=method, route=route, le=str(bucket))
-            lines.append(
-                "hivewiki_http_request_duration_seconds_bucket"
-                f"{bucket_labels} {bucket_counts[bucket]}"
-            )
-        inf_labels = _format_labels(method=method, route=route, le="+Inf")
-        lines.append(
-            f"hivewiki_http_request_duration_seconds_bucket{inf_labels} {total_count}"
-        )
-        lines.append(
-            f"hivewiki_http_request_duration_seconds_sum{labels} {total_sum:.6f}"
-        )
-        lines.append(
-            f"hivewiki_http_request_duration_seconds_count{labels} {total_count}"
-        )
-
     return "\n".join(lines) + "\n"
+
+
+def get_http_metrics_output():
+    registry = get_metrics_registry()
+    return generate_latest(registry).decode("utf-8")
+
+
+def get_metrics_registry():
+    if multiprocess is None or CollectorRegistry is None:
+        return REGISTRY
+
+    multiproc_dir = os.environ.get("PROMETHEUS_MULTIPROC_DIR", "").strip()
+    if not multiproc_dir:
+        return REGISTRY
+
+    registry = CollectorRegistry()
+    multiprocess.MultiProcessCollector(registry)
+    return registry
 
 
 def get_route_label(request):
@@ -207,14 +250,3 @@ def get_route_label(request):
 
     path = request.path_info or "/"
     return path if path.startswith("/") else f"/{path}"
-
-
-def _format_labels(**labels):
-    formatted = ",".join(
-        f'{key}="{_escape_label_value(value)}"' for key, value in labels.items()
-    )
-    return "{" + formatted + "}"
-
-
-def _escape_label_value(value):
-    return str(value).replace("\\", r"\\").replace('"', r"\"").replace("\n", r"\n")

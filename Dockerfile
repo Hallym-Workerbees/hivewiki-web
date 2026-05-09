@@ -15,7 +15,15 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY . .
 RUN uv sync --frozen --no-dev --no-install-project
-RUN uv run python manage.py collectstatic --noinput
+RUN DJANGO_SECRET_KEY=build-only-secret \
+    POSTGRES_DB=build \
+    POSTGRES_USER=build \
+    POSTGRES_PASSWORD=build \
+    POSTGRES_HOST=127.0.0.1 \
+    POSTGRES_PORT=5432 \
+    REDIS_URL=redis://127.0.0.1:6379/0 \
+    uv run python manage.py collectstatic --noinput
+
 
 USER app
 

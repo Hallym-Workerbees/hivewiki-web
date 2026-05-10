@@ -6,6 +6,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 env = environ.Env(
     DJANGO_DEBUG=(bool, True),
     DJANGO_LOG_JSON=(bool, True),
+    DJANGO_LOG_HEALTHCHECKS=(bool, False),
     DJANGO_SESSION_COOKIE_SECURE=(bool, False),
     DJANGO_CSRF_COOKIE_SECURE=(bool, False),
     DJANGO_SECURE_SSL_REDIRECT=(bool, False),
@@ -23,6 +24,7 @@ environ.Env.read_env(BASE_DIR / ".env")
 SECRET_KEY = env("DJANGO_SECRET_KEY")
 DEBUG = env("DJANGO_DEBUG")
 DJANGO_LOG_JSON = env("DJANGO_LOG_JSON")
+DJANGO_LOG_HEALTHCHECKS = env("DJANGO_LOG_HEALTHCHECKS")
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=[])
 CSRF_TRUSTED_ORIGINS = env.list("DJANGO_CSRF_TRUSTED_ORIGINS", default=[])
 CLIENT_IP_HEADER = env("DJANGO_CLIENT_IP_HEADER", default="")
@@ -190,6 +192,9 @@ LOGGING = {
         "request_context": {
             "()": "config.logging.RequestContextFilter",
         },
+        "suppress_healthcheck_access_logs": {
+            "()": "config.logging.SuppressHealthcheckAccessLogsFilter",
+        },
     },
     "formatters": {
         "json": {
@@ -202,7 +207,7 @@ LOGGING = {
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
-            "filters": ["request_context"],
+            "filters": ["request_context", "suppress_healthcheck_access_logs"],
             "formatter": "json" if DJANGO_LOG_JSON else "plain",
         },
     },
@@ -224,6 +229,16 @@ LOGGING = {
         "hivewiki.request": {
             "handlers": ["console"],
             "level": "INFO",
+            "propagate": False,
+        },
+        "uvicorn.access": {
+            "handlers": ["console"],
+            "level": DJANGO_LOG_LEVEL,
+            "propagate": False,
+        },
+        "gunicorn.access": {
+            "handlers": ["console"],
+            "level": DJANGO_LOG_LEVEL,
             "propagate": False,
         },
     },

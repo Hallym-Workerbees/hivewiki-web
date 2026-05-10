@@ -1,7 +1,12 @@
+from unittest.mock import patch
+
 from asgiref.sync import async_to_sync
 from django.http import HttpResponse, StreamingHttpResponse
 from django.test import AsyncClient, SimpleTestCase, override_settings
 from django.urls import path
+
+from config.logging import RequestLoggingMiddleware
+from config.observability import liveness_probe
 
 
 async def async_request_id_view(request):
@@ -15,6 +20,7 @@ def streaming_request_id_view(request):
 urlpatterns = [
     path("async-request-id/", async_request_id_view),
     path("streaming-request-id/", streaming_request_id_view),
+    path("livez/", liveness_probe),
 ]
 
 
@@ -35,3 +41,19 @@ class RequestLoggingMiddlewareTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(b"".join(response.streaming_content).decode(), request_id)
+
+    def test_healthcheck_path_skips_request_complete_log_by_default(self):
+        with patch.object(RequestLoggingMiddleware.logger, "info") as logger_info:
+            response = self.client.get("/livez/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("X-Request-ID", response.headers)
+        logger_info.assert_not_called()
+
+    @override_settings(DJANGO_LOG_HEALTHCHECKS=True)
+    def test_healthcheck_path_logs_when_enabled(self):
+        with patch.object(RequestLoggingMiddleware.logger, "info") as logger_info:
+            response = self.client.get("/livez/")
+
+        self.assertEqual(response.status_code, 200)
+        logger_info.assert_called_once_with("request_complete")

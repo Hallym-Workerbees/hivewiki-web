@@ -1,9 +1,11 @@
 import contextvars
 import json
 import logging
+import re
 import time
 import uuid
 from datetime import UTC, datetime
+from urllib.parse import urlsplit
 
 from asgiref.sync import iscoroutinefunction, markcoroutinefunction
 from django.conf import settings
@@ -16,6 +18,11 @@ _request_context: contextvars.ContextVar[dict[str, object] | None] = (
         default=None,
     )
 )
+HEALTHCHECK_PATHS = frozenset(("/livez/", "/readyz/"))
+ACCESS_LOGGER_NAMES = frozenset(
+    ("django.server", "gunicorn.access", "hivewiki.request", "uvicorn.access")
+)
+REQUEST_LINE_PATH_PATTERN = re.compile(r'"[A-Z]+ (?P<path>\S+) HTTP/[\d.]+"')
 
 
 def _utc_timestamp() -> str:
@@ -30,6 +37,21 @@ def set_request_context(**kwargs) -> None:
     context = dict(_request_context.get() or {})
     context.update({key: value for key, value in kwargs.items() if value is not None})
     _request_context.set(context)
+
+
+def _normalize_path(path: str | None) -> str:
+    normalized_path = urlsplit(path or "").path or "/"
+    if normalized_path != "/" and not normalized_path.endswith("/"):
+        normalized_path = f"{normalized_path}/"
+    return normalized_path
+
+
+def is_healthcheck_path(path: str | None) -> bool:
+    return _normalize_path(path) in HEALTHCHECK_PATHS
+
+
+def should_log_healthcheck_requests() -> bool:
+    return getattr(settings, "DJANGO_LOG_HEALTHCHECKS", False)
 
 
 class RequestContextFilter(logging.Filter):
@@ -47,6 +69,60 @@ class RequestContextFilter(logging.Filter):
         ):
             setattr(record, field, context.get(field))
         return True
+
+
+class SuppressHealthcheckAccessLogsFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        if should_log_healthcheck_requests():
+            return True
+
+        if record.name not in ACCESS_LOGGER_NAMES:
+            return True
+
+        path = self._get_path(record)
+        if not is_healthcheck_path(path):
+            return True
+
+        if record.name == "hivewiki.request":
+            return record.getMessage() != "request_complete"
+
+        return False
+
+    def _get_path(self, record: logging.LogRecord) -> str | None:
+        path = getattr(record, "path", None)
+        if path:
+            return path
+
+        if record.name == "uvicorn.access":
+            return self._get_uvicorn_access_path(record)
+
+        if record.name == "django.server":
+            return self._get_django_server_path(record)
+
+        return self._get_path_from_message(record)
+
+    def _get_uvicorn_access_path(self, record: logging.LogRecord) -> str | None:
+        args = getattr(record, "args", ())
+        if len(args) < 3:
+            return None
+        return str(args[2])
+
+    def _get_django_server_path(self, record: logging.LogRecord) -> str | None:
+        args = getattr(record, "args", ())
+        if not args:
+            return self._get_path_from_message(record)
+
+        request_line = str(args[0])
+        parts = request_line.split()
+        if len(parts) < 2:
+            return self._get_path_from_message(record)
+        return parts[1]
+
+    def _get_path_from_message(self, record: logging.LogRecord) -> str | None:
+        match = REQUEST_LINE_PATH_PATTERN.search(record.getMessage())
+        if match is None:
+            return None
+        return match.group("path")
 
 
 class JsonFormatter(logging.Formatter):
@@ -150,7 +226,10 @@ class RequestLoggingMiddleware:
             status_code=response.status_code,
             duration_seconds=duration_seconds,
         )
-        self.logger.info("request_complete")
+        if should_log_healthcheck_requests() or not is_healthcheck_path(
+            request.path_info
+        ):
+            self.logger.info("request_complete")
         response["X-Request-ID"] = request_id
         return response
 

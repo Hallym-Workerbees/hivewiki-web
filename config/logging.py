@@ -1,7 +1,6 @@
 import contextvars
 import json
 import logging
-import re
 import time
 import uuid
 from datetime import UTC, datetime
@@ -19,10 +18,7 @@ _request_context: contextvars.ContextVar[dict[str, object] | None] = (
     )
 )
 HEALTHCHECK_PATHS = frozenset(("/livez/", "/readyz/"))
-ACCESS_LOGGER_NAMES = frozenset(
-    ("django.server", "gunicorn.access", "hivewiki.request", "uvicorn.access")
-)
-REQUEST_LINE_PATH_PATTERN = re.compile(r'"[A-Z]+ (?P<path>\S+) HTTP/[\d.]+"')
+ACCESS_LOGGER_NAMES = frozenset(("django.server", "hivewiki.request", "uvicorn.access"))
 
 
 def _utc_timestamp() -> str:
@@ -99,7 +95,7 @@ class SuppressHealthcheckAccessLogsFilter(logging.Filter):
         if record.name == "django.server":
             return self._get_django_server_path(record)
 
-        return self._get_path_from_message(record)
+        return None
 
     def _get_uvicorn_access_path(self, record: logging.LogRecord) -> str | None:
         args = getattr(record, "args", ())
@@ -110,19 +106,13 @@ class SuppressHealthcheckAccessLogsFilter(logging.Filter):
     def _get_django_server_path(self, record: logging.LogRecord) -> str | None:
         args = getattr(record, "args", ())
         if not args:
-            return self._get_path_from_message(record)
+            return None
 
         request_line = str(args[0])
         parts = request_line.split()
         if len(parts) < 2:
-            return self._get_path_from_message(record)
-        return parts[1]
-
-    def _get_path_from_message(self, record: logging.LogRecord) -> str | None:
-        match = REQUEST_LINE_PATH_PATTERN.search(record.getMessage())
-        if match is None:
             return None
-        return match.group("path")
+        return parts[1]
 
 
 class JsonFormatter(logging.Formatter):

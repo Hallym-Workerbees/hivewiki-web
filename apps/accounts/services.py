@@ -96,7 +96,7 @@ def build_profile_image_upload_payload(*, user: HiveUser, filename: str) -> dict
     if not content_type.startswith("image/"):
         raise ProfileImageUploadError("이미지 파일만 업로드할 수 있습니다.")
 
-    prefix = settings.AWS_S3_PROFILE_UPLOAD_PREFIX.strip("/").replace("//", "/")
+    prefix = settings.AWS_S3_PROFILE_IMAGE_PREFIX.strip("/").replace("//", "/")
     file_extension = Path(normalized_filename).suffix.lower()[:10]
     object_key = (
         f"{prefix}/{user.id}/{secrets.token_urlsafe(16)}{file_extension}"

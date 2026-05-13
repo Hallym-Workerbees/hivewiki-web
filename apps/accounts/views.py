@@ -1,11 +1,24 @@
 from urllib.parse import urlencode
 
 from django.contrib import messages
-from django.http import Http404, HttpResponse
+from django.core.paginator import Paginator
+from django.db.models import Count, Q
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
+
+from apps.core.models import (
+    Comment,
+    CommentLike,
+    Post,
+    PostBookmark,
+    PostLike,
+    PostStatus,
+    WikiBookmark,
+    WikiDocumentStatus,
+)
 
 from .decorators import login_required
 from .forms import LoginForm, PasswordChangeForm, ProfileEditForm, SignUpForm
@@ -14,9 +27,11 @@ from .services import (
     OAUTH_ACTION_LINK,
     PENDING_OAUTH_CONFIRM_SESSION_KEY,
     OAuthError,
+    ProfileImageUploadError,
     authenticate_user,
     begin_oauth_flow,
     build_pending_oauth_confirmation,
+    build_profile_image_upload_payload,
     create_user,
     exchange_oauth_code_for_profile,
     format_rate_limit_wait_time,
@@ -43,6 +58,8 @@ from .services import (
     update_user_password,
 )
 
+PROFILE_ACTIVITY_PAGE_SIZE = 20
+
 
 def _get_safe_next_url(request):
     next_url = request.GET.get("next") or request.POST.get("next") or ""
@@ -55,6 +72,159 @@ def _redirect_to_login(next_url: str = ""):
     if next_url:
         return redirect(f"{reverse('login')}?{urlencode({'next': next_url})}")
     return redirect("login")
+
+
+def _annotated_profile_posts(queryset):
+    return (
+        queryset.prefetch_related("tags", "wiki_documents")
+        .annotate(
+            comment_count=Count(
+                "comments",
+                filter=Q(comments__deleted_at__isnull=True),
+                distinct=True,
+            ),
+            like_count=Count("post_likes__user", distinct=True),
+        )
+        .order_by("-created_at", "-id")
+    )
+
+
+def _paginate_profile_items(queryset, *, page_number):
+    paginator = Paginator(queryset, PROFILE_ACTIVITY_PAGE_SIZE)
+    return paginator.get_page(page_number)
+
+
+def _profile_visible_posts_filter(user: HiveUser | None, prefix: str = ""):
+    visible_filter = Q(**{f"{prefix}status": PostStatus.PUBLISHED})
+    if user is not None:
+        visible_filter |= Q(
+            **{
+                f"{prefix}author_user": user,
+                f"{prefix}status": PostStatus.DRAFT,
+            }
+        )
+    return visible_filter
+
+
+def _profile_authored_posts_queryset(user: HiveUser):
+    return _annotated_profile_posts(
+        Post.objects.filter(
+            author_user=user,
+            deleted_at__isnull=True,
+        )
+    )
+
+
+def _profile_liked_posts_queryset(user: HiveUser):
+    return (
+        PostLike.objects.filter(
+            user=user,
+            post__deleted_at__isnull=True,
+        )
+        .filter(_profile_visible_posts_filter(user, prefix="post__"))
+        .select_related("post")
+        .order_by("-created_at", "-id")
+    )
+
+
+def _profile_liked_posts_preview(user: HiveUser):
+    return list(_profile_liked_posts_queryset(user)[:5])
+
+
+def _profile_liked_comment_items_queryset(user: HiveUser):
+    return (
+        CommentLike.objects.filter(
+            user=user,
+            comment__deleted_at__isnull=True,
+            comment__post__deleted_at__isnull=True,
+        )
+        .filter(_profile_visible_posts_filter(user, prefix="comment__post__"))
+        .select_related("comment", "comment__post")
+        .order_by("-created_at", "-id")
+    )
+
+
+def _profile_bookmarked_posts_queryset(user: HiveUser):
+    return (
+        PostBookmark.objects.filter(
+            user=user,
+            post__deleted_at__isnull=True,
+        )
+        .filter(_profile_visible_posts_filter(user, prefix="post__"))
+        .select_related("post")
+        .order_by("-created_at", "-id")
+    )
+
+
+def _profile_bookmarked_posts_preview(user: HiveUser):
+    return list(_profile_bookmarked_posts_queryset(user)[:5])
+
+
+def _profile_bookmarked_wiki_items_queryset(user: HiveUser):
+    return (
+        WikiBookmark.objects.filter(
+            user=user,
+            wiki_document__current_revision__isnull=False,
+            wiki_document__status=WikiDocumentStatus.PUBLISHED,
+        )
+        .select_related("wiki_document")
+        .order_by("-created_at", "-id")
+    )
+
+
+def _build_profile_activity_context(user: HiveUser) -> dict:
+    authored_posts = Post.objects.filter(
+        author_user=user,
+        deleted_at__isnull=True,
+    )
+    authored_comments = Comment.objects.filter(
+        author_user=user,
+        deleted_at__isnull=True,
+    )
+    recent_posts = list(_profile_authored_posts_queryset(user)[:5])
+    liked_posts = _profile_liked_posts_preview(user)
+    liked_comment_items = list(_profile_liked_comment_items_queryset(user)[:5])
+    bookmarked_posts = _profile_bookmarked_posts_preview(user)
+    bookmarked_wiki_items = list(_profile_bookmarked_wiki_items_queryset(user)[:5])
+    return {
+        "activity_stats": [
+            {
+                "label": "작성 글",
+                "value": authored_posts.count(),
+                "description": "삭제되지 않은 커뮤니티 게시글 수입니다.",
+            },
+            {
+                "label": "작성 댓글",
+                "value": authored_comments.count(),
+                "description": "대화에 참여한 댓글 수입니다.",
+            },
+            {
+                "label": "받은 좋아요",
+                "value": (
+                    PostLike.objects.filter(post__author_user=user).count()
+                    + CommentLike.objects.filter(comment__author_user=user).count()
+                ),
+                "description": "게시글과 댓글이 받은 좋아요 합계입니다.",
+            },
+            {
+                "label": "연결한 위키",
+                "value": authored_posts.filter(wiki_documents__isnull=False)
+                .distinct()
+                .count(),
+                "description": "게시글에서 참조한 위키가 있는 글 수입니다.",
+            },
+        ],
+        "recent_posts": recent_posts,
+        "liked_posts": liked_posts,
+        "liked_comment_items": liked_comment_items,
+        "bookmarked_posts": bookmarked_posts,
+        "bookmarked_wiki_items": bookmarked_wiki_items,
+        "recent_posts_url": reverse("mypage_authored_posts"),
+        "liked_posts_url": reverse("mypage_liked_posts"),
+        "liked_comments_url": reverse("mypage_liked_comments"),
+        "bookmarked_posts_url": reverse("mypage_bookmarked_posts"),
+        "bookmarked_wiki_url": reverse("mypage_bookmarked_wiki"),
+    }
 
 
 def login_view(request):
@@ -333,6 +503,7 @@ def oauth_callback_view(request, provider: str):
 @login_required
 def mypage_view(request):
     oauth_accounts = list(get_user_oauth_accounts(request.current_user))
+    activity_context = _build_profile_activity_context(request.current_user)
     return render(
         request,
         "pages/user/mypage.html",
@@ -345,7 +516,110 @@ def mypage_view(request):
                 user=request.current_user,
             ),
             "password_login_disabled": request.current_user.password_hash is None,
+            **activity_context,
         },
+    )
+
+
+def _render_profile_activity_list(
+    request,
+    *,
+    page_heading: str,
+    title: str,
+    description: str,
+    page_obj,
+    list_type: str,
+):
+    return render(
+        request,
+        "pages/user/activity_list.html",
+        {
+            "page_heading": page_heading,
+            "title": title,
+            "description": description,
+            "page_obj": page_obj,
+            "list_type": list_type,
+        },
+    )
+
+
+@login_required
+def mypage_authored_posts_view(request):
+    page_obj = _paginate_profile_items(
+        _profile_authored_posts_queryset(request.current_user),
+        page_number=request.GET.get("page", "1"),
+    )
+    return _render_profile_activity_list(
+        request,
+        page_heading="My Posts",
+        title="내가 쓴 글",
+        description="작성한 커뮤니티 게시글 목록입니다.",
+        page_obj=page_obj,
+        list_type="posts",
+    )
+
+
+@login_required
+def mypage_liked_posts_view(request):
+    page_obj = _paginate_profile_items(
+        _profile_liked_posts_queryset(request.current_user),
+        page_number=request.GET.get("page", "1"),
+    )
+    return _render_profile_activity_list(
+        request,
+        page_heading="Liked Posts",
+        title="좋아요한 게시글",
+        description="좋아요를 누른 게시글을 최신순으로 확인할 수 있습니다.",
+        page_obj=page_obj,
+        list_type="liked_posts",
+    )
+
+
+@login_required
+def mypage_liked_comments_view(request):
+    page_obj = _paginate_profile_items(
+        _profile_liked_comment_items_queryset(request.current_user),
+        page_number=request.GET.get("page", "1"),
+    )
+    return _render_profile_activity_list(
+        request,
+        page_heading="Liked Comments",
+        title="좋아요한 댓글",
+        description="좋아요를 누른 댓글과 해당 게시글로 바로 이동할 수 있습니다.",
+        page_obj=page_obj,
+        list_type="liked_comments",
+    )
+
+
+@login_required
+def mypage_bookmarked_posts_view(request):
+    page_obj = _paginate_profile_items(
+        _profile_bookmarked_posts_queryset(request.current_user),
+        page_number=request.GET.get("page", "1"),
+    )
+    return _render_profile_activity_list(
+        request,
+        page_heading="Bookmarked Posts",
+        title="북마크한 게시글",
+        description="나중에 다시 보려 저장한 커뮤니티 게시글 목록입니다.",
+        page_obj=page_obj,
+        list_type="bookmarked_posts",
+    )
+
+
+@login_required
+def mypage_bookmarked_wiki_view(request):
+    page_obj = _paginate_profile_items(
+        _profile_bookmarked_wiki_items_queryset(request.current_user),
+        page_number=request.GET.get("page", "1"),
+    )
+    return _render_profile_activity_list(
+        request,
+        page_heading="Bookmarked Wiki",
+        title="북마크한 위키",
+        description="저장해 둔 위키 문서를 최신순으로 확인할 수 있습니다.",
+        page_obj=page_obj,
+        list_type="bookmarked_wiki",
     )
 
 
@@ -365,6 +639,19 @@ def profile_edit_view(request):
             "form": form,
         },
     )
+
+
+@login_required
+@require_POST
+def profile_image_upload_prepare_view(request):
+    try:
+        payload = build_profile_image_upload_payload(
+            user=request.current_user,
+            filename=request.POST.get("filename", ""),
+        )
+    except ProfileImageUploadError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    return JsonResponse(payload)
 
 
 @login_required

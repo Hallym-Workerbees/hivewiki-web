@@ -1,14 +1,24 @@
-from unittest.mock import patch
+from datetime import timedelta
+from unittest.mock import Mock, patch
 
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.cache import cache
 from django.test import TestCase, override_settings
+from django.utils import timezone
 
 from apps.accounts.models import HiveUser, OAuthAccount, OAuthProvider, UserStatus
 from apps.accounts.services import (
     SESSION_USER_ID_KEY,
     TIMEZONE_SESSION_KEY,
     read_pending_oauth_confirmation,
+)
+from apps.core.models import (
+    Comment,
+    CommentLike,
+    Post,
+    PostBookmark,
+    PostLike,
+    PostStatus,
 )
 
 
@@ -20,10 +30,23 @@ from apps.accounts.services import (
             "LOCATION": "hivewiki-test-cache",
         }
     },
+    STORAGES={
+        "default": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+        },
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        },
+    },
     GOOGLE_OAUTH_CLIENT_ID="google-client-id",
     GOOGLE_OAUTH_CLIENT_SECRET="google-client-secret",
     GITHUB_OAUTH_CLIENT_ID="github-client-id",
     GITHUB_OAUTH_CLIENT_SECRET="github-client-secret",
+    AWS_S3_UPLOAD_ACCESS_KEY_ID="test-access-key",
+    AWS_S3_UPLOAD_SECRET_ACCESS_KEY="test-secret-key",
+    AWS_S3_UPLOAD_REGION="ap-northeast-2",
+    AWS_S3_UPLOAD_BUCKET="hivewiki-profile-images",
+    AWS_S3_UPLOAD_PUBLIC_BASE_URL="https://cdn.example.com/hivewiki-profile-images",
 )
 class AuthFlowTests(TestCase):
     SIGNUP_PASSWORD = "".join(["Strong", "Pass", "123"])
@@ -34,6 +57,19 @@ class AuthFlowTests(TestCase):
 
     def setUp(self):
         cache.clear()
+
+    def _mock_s3_presigned_post(self):
+        mock_s3_client = Mock()
+        mock_s3_client.generate_presigned_post.return_value = {
+            "url": "https://s3.ap-northeast-2.amazonaws.com/hivewiki-profile-images",
+            "fields": {
+                "key": "profiles/test/avatar.png",
+                "Content-Type": "image/png",
+                "policy": "encoded-policy",
+                "x-amz-signature": "signature",
+            },
+        }
+        return mock_s3_client
 
     def _login(self, user):
         session = self.client.session
@@ -158,6 +194,16 @@ class AuthFlowTests(TestCase):
             status=UserStatus.ACTIVE,
             profile_image="https://example.com/avatar.png",
         )
+        post = Post.objects.create(
+            author_user=user,
+            content_markdown="# 첫 글\n\n프로필 테스트용 글입니다.",
+        )
+        Comment.objects.create(
+            post=post,
+            author_user=user,
+            content="첫 댓글",
+        )
+        PostLike.objects.create(post=post, user=user)
         self._login(user)
 
         response = self.client.get("/me/")
@@ -166,8 +212,139 @@ class AuthFlowTests(TestCase):
         self.assertContains(response, "profile_user")
         self.assertContains(response, "profile@example.com")
         self.assertContains(response, "https://example.com/avatar.png")
+        self.assertContains(response, "작성 글")
+        self.assertContains(response, "작성 댓글")
+        self.assertContains(response, "받은 좋아요")
+        self.assertContains(response, "첫 글")
         self.assertContains(response, "비밀번호 변경")
         self.assertContains(response, "Google 연결")
+
+    def test_mypage_liked_comments_page_links_to_comment_anchor(self):
+        user = HiveUser.objects.create(
+            username="liked_c_user",
+            email="liked-comment@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+        post = Post.objects.create(
+            author_user=user,
+            content_markdown="# 댓글 대상 글\n\n본문입니다.",
+        )
+        comment = Comment.objects.create(
+            post=post,
+            author_user=user,
+            content="좋아요한 댓글입니다.",
+        )
+        CommentLike.objects.create(comment=comment, user=user)
+        self._login(user)
+
+        response = self.client.get("/me/likes/comments/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            f"{post.get_absolute_url()}?comment={comment.id}#comment-{comment.id}",
+        )
+
+    def test_mypage_authored_posts_page_paginates(self):
+        user = HiveUser.objects.create(
+            username="paginated_user",
+            email="paginated@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+        for index in range(21):
+            Post.objects.create(
+                author_user=user,
+                content_markdown=f"# 글 {index}\n\n본문 {index}",
+            )
+        self._login(user)
+
+        first_page = self.client.get("/me/posts/")
+        second_page = self.client.get("/me/posts/?page=2")
+
+        self.assertEqual(first_page.status_code, 200)
+        self.assertEqual(second_page.status_code, 200)
+        self.assertContains(first_page, "1 / 2")
+        self.assertContains(second_page, "2 / 2")
+
+    def test_mypage_hides_liked_posts_that_are_not_community_visible(self):
+        user = HiveUser.objects.create(
+            username="liked_vis_user",
+            email="liked-visibility@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+        author = HiveUser.objects.create(
+            username="other_author",
+            email="other-author@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+        published_post = Post.objects.create(
+            author_user=author,
+            content_markdown="# 공개 글\n\n보이는 글입니다.",
+        )
+        hidden_draft_post = Post.objects.create(
+            author_user=author,
+            content_markdown="# 숨김 초안\n\n보이면 안 됩니다.",
+            status=PostStatus.DRAFT,
+        )
+        PostLike.objects.create(post=hidden_draft_post, user=user)
+        PostLike.objects.create(post=published_post, user=user)
+        self._login(user)
+
+        response = self.client.get("/me/likes/posts/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "공개 글")
+        self.assertNotContains(response, "숨김 초안")
+
+    def test_mypage_preview_orders_liked_and_bookmarked_posts_by_action_time(self):
+        user = HiveUser.objects.create(
+            username="action_order",
+            email="action-order@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+        author = HiveUser.objects.create(
+            username="feed_author",
+            email="feed-author@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+        older_post = Post.objects.create(
+            author_user=author,
+            content_markdown="# 먼저 쓴 글\n\n오래된 게시글입니다.",
+        )
+        newer_post = Post.objects.create(
+            author_user=author,
+            content_markdown="# 나중에 쓴 글\n\n새 게시글입니다.",
+        )
+        earlier_like = PostLike.objects.create(post=newer_post, user=user)
+        later_like = PostLike.objects.create(post=older_post, user=user)
+        earlier_bookmark = PostBookmark.objects.create(post=newer_post, user=user)
+        later_bookmark = PostBookmark.objects.create(post=older_post, user=user)
+        current_time = timezone.now()
+        PostLike.objects.filter(pk=earlier_like.pk).update(
+            created_at=current_time - timedelta(minutes=2)
+        )
+        PostLike.objects.filter(pk=later_like.pk).update(
+            created_at=current_time - timedelta(minutes=1)
+        )
+        PostBookmark.objects.filter(pk=earlier_bookmark.pk).update(
+            created_at=current_time - timedelta(minutes=2)
+        )
+        PostBookmark.objects.filter(pk=later_bookmark.pk).update(
+            created_at=current_time - timedelta(minutes=1)
+        )
+        self._login(user)
+
+        response = self.client.get("/me/")
+
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode()
+        self.assertLess(content.find("먼저 쓴 글"), content.find("나중에 쓴 글"))
 
     def test_profile_edit_updates_current_user(self):
         user = HiveUser.objects.create(
@@ -192,6 +369,59 @@ class AuthFlowTests(TestCase):
         self.assertEqual(user.username, "renamed_user")
         self.assertEqual(user.email, "renamed@example.com")
         self.assertEqual(user.profile_image, "https://example.com/updated.png")
+
+    @patch("apps.accounts.services.boto3.client")
+    def test_profile_image_upload_prepare_returns_presigned_payload(
+        self, mock_boto3_client
+    ):
+        user = HiveUser.objects.create(
+            username="upload_user",
+            email="upload@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+        self._login(user)
+        mock_s3_client = self._mock_s3_presigned_post()
+        mock_boto3_client.return_value = mock_s3_client
+
+        response = self.client.post(
+            "/me/profile/image-upload/prepare/",
+            {"filename": "avatar.png"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("upload_url", payload)
+        self.assertIn("fields", payload)
+        self.assertEqual(payload["fields"]["Content-Type"], "image/png")
+        self.assertTrue(payload["public_url"].startswith("https://cdn.example.com/"))
+        mock_boto3_client.assert_called_once_with(
+            "s3",
+            region_name="ap-northeast-2",
+            aws_access_key_id="test-access-key",
+            aws_secret_access_key="test-secret-key",
+        )
+        mock_s3_client.generate_presigned_post.assert_called_once()
+
+    def test_profile_image_upload_prepare_rejects_non_image(self):
+        user = HiveUser.objects.create(
+            username="upload_user",
+            email="upload@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+        self._login(user)
+
+        response = self.client.post(
+            "/me/profile/image-upload/prepare/",
+            {"filename": "notes.txt"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()["error"],
+            "이미지 파일만 업로드할 수 있습니다.",
+        )
 
     def test_password_change_updates_hash_and_allows_new_login(self):
         user = HiveUser.objects.create(
@@ -466,6 +696,7 @@ class AuthFlowTests(TestCase):
                 "provider_user_id": "google-user-123",
                 "email": "oauth@example.com",
                 "provider_email": "oauth@example.com",
+                "profile_image": "https://example.com/google-avatar.png",
                 "username_hint": "oauthuser",
             },
             {
@@ -489,7 +720,7 @@ class AuthFlowTests(TestCase):
             provider_user_id="google-user-123",
         )
         self.assertEqual(oauth_account.user_id, user.id)
-        self.assertFalse(user.profile_image)
+        self.assertEqual(user.profile_image, "https://example.com/google-avatar.png")
         self.assertEqual(self.client.session[SESSION_USER_ID_KEY], str(user.id))
         messages = list(response.wsgi_request._messages)
         self.assertTrue(
@@ -576,6 +807,7 @@ class AuthFlowTests(TestCase):
                 "provider_user_id": "github-user-456",
                 "email": "existing@example.com",
                 "provider_email": "existing@example.com",
+                "profile_image": "https://example.com/github-avatar.png",
                 "username_hint": "octocat",
             },
             {
@@ -628,6 +860,7 @@ class AuthFlowTests(TestCase):
                 "provider_user_id": "github-user-456",
                 "email": "existing@example.com",
                 "provider_email": "existing@example.com",
+                "profile_image": "https://example.com/github-avatar.png",
                 "username_hint": "octocat",
             },
             {
@@ -659,6 +892,7 @@ class AuthFlowTests(TestCase):
         self.assertEqual(oauth_account.user_id, user.id)
         user.refresh_from_db()
         self.assertTrue(check_password(self.LOGIN_PASSWORD, user.password_hash))
+        self.assertEqual(user.profile_image, "https://example.com/github-avatar.png")
         self.assertEqual(self.client.session[SESSION_USER_ID_KEY], str(user.id))
         self.assertNotIn("pending_oauth_confirm", self.client.session)
         messages = list(confirm_response.wsgi_request._messages)
@@ -743,6 +977,7 @@ class AuthFlowTests(TestCase):
                 "provider_user_id": "google-link-123",
                 "email": "link@example.com",
                 "provider_email": "link@example.com",
+                "profile_image": "https://example.com/google-link-avatar.png",
                 "username_hint": "linkuser",
             },
             {
@@ -762,6 +997,10 @@ class AuthFlowTests(TestCase):
         self.assertRedirects(response, "/me/")
         user.refresh_from_db()
         self.assertTrue(check_password(self.LOGIN_PASSWORD, user.password_hash))
+        self.assertEqual(
+            user.profile_image,
+            "https://example.com/google-link-avatar.png",
+        )
         self.assertTrue(
             OAuthAccount.objects.filter(
                 user=user,
@@ -769,6 +1008,54 @@ class AuthFlowTests(TestCase):
                 provider_user_id="google-link-123",
             ).exists()
         )
+
+    @patch("apps.accounts.views.exchange_oauth_code_for_profile")
+    def test_oauth_login_does_not_overwrite_existing_profile_image(self, mock_exchange):
+        user = HiveUser.objects.create(
+            username="oauth_user",
+            email="oauth@example.com",
+            password_hash=None,
+            status=UserStatus.ACTIVE,
+            profile_image="https://example.com/existing-avatar.png",
+        )
+        OAuthAccount.objects.create(
+            user=user,
+            provider=OAuthProvider.GOOGLE,
+            provider_user_id="google-user-123",
+            provider_email="oauth@example.com",
+        )
+        session = self.client.session
+        session["oauth_state"] = {
+            "provider": OAuthProvider.GOOGLE,
+            "state": "test-state",
+            "next_url": "",
+        }
+        session.save()
+        mock_exchange.return_value = (
+            {
+                "provider_user_id": "google-user-123",
+                "email": "oauth@example.com",
+                "provider_email": "oauth@example.com",
+                "profile_image": "https://example.com/google-avatar.png",
+                "username_hint": "oauthuser",
+            },
+            {
+                "provider": OAuthProvider.GOOGLE,
+                "state": "test-state",
+                "next_url": "",
+                "action": "login",
+                "link_user_id": "",
+            },
+        )
+
+        response = self.client.get(
+            "/auth/oauth/google/callback/",
+            {"code": "auth-code", "state": "test-state"},
+        )
+
+        self.assertRedirects(response, "/dashboard/")
+        user.refresh_from_db()
+        self.assertEqual(user.profile_image, "https://example.com/existing-avatar.png")
 
     @patch("apps.accounts.views.exchange_oauth_code_for_profile")
     def test_oauth_link_callback_rejects_different_email(self, mock_exchange):

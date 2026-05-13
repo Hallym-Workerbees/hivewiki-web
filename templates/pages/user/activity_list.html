@@ -1,0 +1,130 @@
+{% extends "layouts/app.html" %}
+{% block title %}
+    HiveWiki | {{ title }}
+{% endblock title %}
+{% block app_content %}
+    <section class="mx-auto max-w-5xl space-y-8">
+        {% include "partials/section_header.html" with eyebrow="My Page" title=title description=description %}
+        <nav class="flex flex-wrap gap-3">
+            <a href="{% url 'mypage_authored_posts' %}"
+               class="rounded-2xl bg-surface-container-high px-4 py-2 text-sm font-semibold text-primary">내가 쓴 글</a>
+            <a href="{% url 'mypage_liked_posts' %}"
+               class="rounded-2xl bg-surface-container-high px-4 py-2 text-sm font-semibold text-primary">좋아요한 게시글</a>
+            <a href="{% url 'mypage_liked_comments' %}"
+               class="rounded-2xl bg-surface-container-high px-4 py-2 text-sm font-semibold text-primary">좋아요한 댓글</a>
+            <a href="{% url 'mypage_bookmarked_posts' %}"
+               class="rounded-2xl bg-surface-container-high px-4 py-2 text-sm font-semibold text-primary">북마크한 게시글</a>
+            <a href="{% url 'mypage_bookmarked_wiki' %}"
+               class="rounded-2xl bg-surface-container-high px-4 py-2 text-sm font-semibold text-primary">북마크한 위키</a>
+        </nav>
+        <section class="rounded-[2rem] bg-surface-container-low p-8">
+            <div class="space-y-4">
+                {% if list_type == "posts" %}
+                    {% for post in page_obj %}
+                        <article class="rounded-[1.5rem] bg-white p-5">
+                            <a href="{{ post.get_absolute_url }}"
+                               class="line-clamp-1 text-lg font-bold text-on-surface">{{ post.title|default:"제목 없는 게시글" }}</a>
+                            <p class="mt-2 line-clamp-2 text-sm leading-7 text-on-surface-variant">{{ post.summary|default:"내용이 아직 없습니다." }}</p>
+                            <div class="mt-4 flex flex-wrap items-center gap-3 text-xs text-stone-500">
+                                <time class="timezone-sensitive"
+                                      data-local-datetime="{{ post.created_at|date:'c' }}"
+                                      data-local-format="datetime">{{ post.created_at|date:"Y.m.d H:i" }}</time>
+                                <span>댓글 {{ post.comment_count }}</span>
+                                <span>좋아요 {{ post.like_count }}</span>
+                            </div>
+                        </article>
+                    {% empty %}
+                        <p class="text-sm leading-7 text-on-surface-variant">아직 작성한 게시글이 없습니다.</p>
+                    {% endfor %}
+                {% elif list_type == "liked_posts" %}
+                    {% for item in page_obj %}
+                        <article class="rounded-[1.5rem] bg-white p-5">
+                            <a href="{{ item.post.get_absolute_url }}"
+                               class="line-clamp-1 text-lg font-bold text-on-surface">{{ item.post.title|default:"제목 없는 게시글" }}</a>
+                            <p class="mt-2 line-clamp-2 text-sm leading-7 text-on-surface-variant">
+                                {{ item.post.summary|default:"내용이 아직 없습니다." }}
+                            </p>
+                            <div class="mt-4 flex flex-wrap items-center gap-3 text-xs text-stone-500">
+                                <span>좋아요 누른 시각</span>
+                                <time class="timezone-sensitive"
+                                      data-local-datetime="{{ item.created_at|date:'c' }}"
+                                      data-local-format="datetime">{{ item.created_at|date:"Y.m.d H:i" }}</time>
+                            </div>
+                        </article>
+                    {% empty %}
+                        <p class="text-sm leading-7 text-on-surface-variant">아직 좋아요한 게시글이 없습니다.</p>
+                    {% endfor %}
+                {% elif list_type == "liked_comments" %}
+                    {% for item in page_obj %}
+                        <article class="rounded-[1.5rem] bg-white p-5">
+                            <a href="{{ item.comment.post.get_absolute_url }}?comment={{ item.comment.id }}#comment-{{ item.comment.id }}"
+                               class="line-clamp-1 text-lg font-bold text-on-surface">{{ item.comment.post.title|default:"제목 없는 게시글" }}</a>
+                            <p class="mt-2 line-clamp-3 text-sm leading-7 text-on-surface-variant">
+                                {{ item.comment.content|default:"삭제되었거나 비어 있는 댓글입니다." }}
+                            </p>
+                            <div class="mt-4 flex flex-wrap items-center gap-3 text-xs text-stone-500">
+                                <span>댓글로 바로 이동</span>
+                                <time class="timezone-sensitive"
+                                      data-local-datetime="{{ item.created_at|date:'c' }}"
+                                      data-local-format="datetime">{{ item.created_at|date:"Y.m.d H:i" }}</time>
+                            </div>
+                        </article>
+                    {% empty %}
+                        <p class="text-sm leading-7 text-on-surface-variant">아직 좋아요한 댓글이 없습니다.</p>
+                    {% endfor %}
+                {% elif list_type == "bookmarked_posts" %}
+                    {% for item in page_obj %}
+                        <article class="rounded-[1.5rem] bg-white p-5">
+                            <a href="{{ item.post.get_absolute_url }}"
+                               class="line-clamp-1 text-lg font-bold text-on-surface">{{ item.post.title|default:"제목 없는 게시글" }}</a>
+                            <p class="mt-2 line-clamp-2 text-sm leading-7 text-on-surface-variant">
+                                {{ item.post.summary|default:"내용이 아직 없습니다." }}
+                            </p>
+                            <div class="mt-4 flex flex-wrap items-center gap-3 text-xs text-stone-500">
+                                <span>북마크한 시각</span>
+                                <time class="timezone-sensitive"
+                                      data-local-datetime="{{ item.created_at|date:'c' }}"
+                                      data-local-format="datetime">{{ item.created_at|date:"Y.m.d H:i" }}</time>
+                            </div>
+                        </article>
+                    {% empty %}
+                        <p class="text-sm leading-7 text-on-surface-variant">아직 북마크한 게시글이 없습니다.</p>
+                    {% endfor %}
+                {% elif list_type == "bookmarked_wiki" %}
+                    {% for item in page_obj %}
+                        <article class="rounded-[1.5rem] bg-white p-5">
+                            <a href="{% url 'wiki_detail' item.wiki_document.slug %}"
+                               class="line-clamp-1 text-lg font-bold text-on-surface">{{ item.wiki_document.title }}</a>
+                            <p class="mt-2 line-clamp-2 text-sm leading-7 text-on-surface-variant">{{ item.wiki_document.summary }}</p>
+                            <div class="mt-4 text-xs text-stone-500">
+                                <span>북마크한 시각</span>
+                                <time class="timezone-sensitive"
+                                      data-local-datetime="{{ item.created_at|date:'c' }}"
+                                      data-local-format="datetime">{{ item.created_at|date:"Y.m.d H:i" }}</time>
+                            </div>
+                        </article>
+                    {% empty %}
+                        <p class="text-sm leading-7 text-on-surface-variant">아직 북마크한 위키가 없습니다.</p>
+                    {% endfor %}
+                {% endif %}
+            </div>
+            {% if page_obj.paginator.num_pages > 1 %}
+                <div class="mt-8 flex items-center justify-between gap-4 border-t border-outline-variant/70 pt-6 text-sm">
+                    {% if page_obj.has_previous %}
+                        <a href="?page={{ page_obj.previous_page_number }}"
+                           class="rounded-2xl bg-surface-container-high px-4 py-2 font-semibold text-primary">이전</a>
+                    {% else %}
+                        <span class="rounded-2xl bg-surface-container-high px-4 py-2 text-on-surface-variant">이전</span>
+                    {% endif %}
+                    <span class="text-on-surface-variant">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+                    {% if page_obj.has_next %}
+                        <a href="?page={{ page_obj.next_page_number }}"
+                           class="rounded-2xl bg-surface-container-high px-4 py-2 font-semibold text-primary">다음</a>
+                    {% else %}
+                        <span class="rounded-2xl bg-surface-container-high px-4 py-2 text-on-surface-variant">다음</span>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </section>
+    </section>
+{% endblock app_content %}

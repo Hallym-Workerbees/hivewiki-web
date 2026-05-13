@@ -114,12 +114,12 @@ class ProfileEditForm(forms.ModelForm):
         labels = {
             "username": "닉네임",
             "email": "이메일",
-            "profile_image": "프로필 이미지 URL",
+            "profile_image": "프로필 이미지",
         }
         widgets = {
             "username": forms.TextInput(),
             "email": forms.EmailInput(),
-            "profile_image": forms.URLInput(),
+            "profile_image": forms.HiddenInput(),
         }
 
     def __init__(self, *args, **kwargs):
@@ -139,12 +139,10 @@ class ProfileEditForm(forms.ModelForm):
             }
         )
         self.fields["profile_image"].required = False
-        self.fields["profile_image"].widget.attrs.update(
-            {
-                "class": "w-full rounded-2xl border-stone-200 bg-white px-4 py-3",
-                "placeholder": "https://example.com/avatar.png",
-            }
-        )
+
+    def clean_profile_image(self):
+        profile_image = (self.cleaned_data.get("profile_image") or "").strip()
+        return profile_image or ""
 
     def clean_username(self):
         username = self.cleaned_data["username"].strip()

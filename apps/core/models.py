@@ -142,6 +142,11 @@ class Post(models.Model):
         through="PostLike",
         related_name="liked_posts",
     )
+    bookmarks = models.ManyToManyField(
+        "accounts.HiveUser",
+        through="PostBookmark",
+        related_name="bookmarked_posts",
+    )
     tags = models.ManyToManyField(
         Tag,
         through="PostTag",
@@ -239,6 +244,44 @@ class PostLike(models.Model):
                 name="post_likes_post_id_user_id_key",
             )
         ]
+        indexes = [
+            models.Index(
+                fields=["user", "-created_at"],
+                name="post_likes_user_created_idx",
+            )
+        ]
+
+
+class PostBookmark(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    post = models.ForeignKey(
+        Post,
+        on_delete=models.CASCADE,
+        related_name="post_bookmarks",
+        db_column="post_id",
+    )
+    user = models.ForeignKey(
+        "accounts.HiveUser",
+        on_delete=models.CASCADE,
+        related_name="post_bookmarks",
+        db_column="user_id",
+    )
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        db_table = "post_bookmarks"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["post", "user"],
+                name="post_bookmarks_post_id_user_id_key",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["user", "-created_at"],
+                name="post_bm_user_created_idx",
+            )
+        ]
 
 
 class Comment(models.Model):
@@ -277,6 +320,12 @@ class Comment(models.Model):
 
     class Meta:
         db_table = "comments"
+        indexes = [
+            models.Index(
+                fields=["post", "deleted_at", "created_at"],
+                name="comments_post_del_created_idx",
+            )
+        ]
 
     def __str__(self):
         return f"Comment<{self.pk}>"
@@ -304,6 +353,12 @@ class CommentLike(models.Model):
             models.UniqueConstraint(
                 fields=["comment", "user"],
                 name="comment_likes_comment_id_user_id_key",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["user", "-created_at"],
+                name="comment_likes_user_created_idx",
             )
         ]
 
@@ -515,6 +570,11 @@ class WikiDocument(models.Model):
         choices=WikiDocumentStatus.choices,
         default=WikiDocumentStatus.PUBLISHED,
     )
+    bookmarks = models.ManyToManyField(
+        "accounts.HiveUser",
+        through="WikiBookmark",
+        related_name="bookmarked_wiki_documents",
+    )
     created_at = models.DateTimeField(default=timezone.now, editable=False)
     updated_at = models.DateTimeField(default=timezone.now)
 
@@ -570,3 +630,35 @@ class WikiRevisionSource(models.Model):
 
     class Meta:
         db_table = "wiki_revision_sources"
+
+
+class WikiBookmark(models.Model):
+    id = models.BigAutoField(primary_key=True)
+    wiki_document = models.ForeignKey(
+        WikiDocument,
+        on_delete=models.CASCADE,
+        related_name="wiki_bookmarks",
+        db_column="wiki_document_id",
+    )
+    user = models.ForeignKey(
+        "accounts.HiveUser",
+        on_delete=models.CASCADE,
+        related_name="wiki_bookmarks",
+        db_column="user_id",
+    )
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+
+    class Meta:
+        db_table = "wiki_bookmarks"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["wiki_document", "user"],
+                name="wiki_bookmarks_document_id_user_id_key",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["user", "-created_at"],
+                name="wiki_bm_user_created_idx",
+            )
+        ]

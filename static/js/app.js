@@ -8,6 +8,7 @@ document.body.addEventListener("htmx:afterSwap", (event) => {
   formatLocalDatetimeInputs(document.body.dataset.currentTimezone, root);
   initializeWikiToc(root);
   initializeCodeCopyButtons(root);
+  initializeProfileImageUploader(root);
   renderMath(target || document.body);
 });
 
@@ -256,6 +257,135 @@ function disconnectWikiTocObserver() {
     window.hiveWikiTocObserver.disconnect();
     window.hiveWikiTocObserver = null;
   }
+}
+
+function initializeProfileImageUploader(root = document) {
+  const forms =
+    root instanceof Element
+      ? root.matches("[data-profile-edit-form]")
+        ? [root]
+        : root.querySelectorAll("[data-profile-edit-form]")
+      : document.querySelectorAll("[data-profile-edit-form]");
+
+  forms.forEach((form) => {
+    if (!(form instanceof HTMLFormElement) || form.dataset.uploadReady === "true") {
+      return;
+    }
+
+    const fileInput = form.querySelector("[data-profile-image-file-input]");
+    const hiddenInput = form.querySelector('input[name="profile_image"]');
+    const statusNode = form.querySelector("[data-profile-image-upload-status]");
+    const previewImage = form
+      .closest(".grid")
+      ?.querySelector("[data-profile-image-preview]");
+    const fallbackNode = form
+      .closest(".grid")
+      ?.querySelector("[data-profile-image-fallback]");
+    const clearButton = form.querySelector("[data-profile-image-clear]");
+    const csrfInput = form.querySelector('input[name="csrfmiddlewaretoken"]');
+
+    if (
+      !(fileInput instanceof HTMLInputElement) ||
+      !(hiddenInput instanceof HTMLInputElement) ||
+      !(statusNode instanceof HTMLElement) ||
+      !(csrfInput instanceof HTMLInputElement)
+    ) {
+      return;
+    }
+
+    const setStatus = (message, tone = "muted") => {
+      statusNode.textContent = message;
+      statusNode.classList.remove("hidden", "text-red-700", "text-emerald-700");
+      statusNode.classList.add("block");
+      statusNode.classList.toggle("text-red-700", tone === "error");
+      statusNode.classList.toggle("text-emerald-700", tone === "success");
+    };
+
+    const updatePreview = (imageUrl) => {
+      hiddenInput.value = imageUrl;
+      if (previewImage instanceof HTMLImageElement) {
+        if (imageUrl) {
+          previewImage.src = imageUrl;
+          previewImage.classList.remove("hidden");
+        } else {
+          previewImage.src = "";
+          previewImage.classList.add("hidden");
+        }
+      }
+      if (fallbackNode instanceof HTMLElement) {
+        fallbackNode.classList.toggle("hidden", Boolean(imageUrl));
+      }
+    };
+
+    clearButton?.addEventListener("click", () => {
+      fileInput.value = "";
+      updatePreview("");
+      statusNode.classList.add("hidden");
+    });
+
+    fileInput.addEventListener("change", async () => {
+      const file = fileInput.files?.[0];
+      if (!file) {
+        return;
+      }
+
+      setStatus("업로드를 준비하고 있습니다.");
+
+      let prepareResponse;
+      try {
+        const preparePayload = new URLSearchParams({ filename: file.name });
+        prepareResponse = await fetch(fileInput.dataset.uploadPrepareUrl || "", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+            "X-CSRFToken": csrfInput.value,
+            "X-Requested-With": "XMLHttpRequest",
+          },
+          body: preparePayload.toString(),
+          credentials: "same-origin",
+        });
+      } catch {
+        setStatus("업로드 준비 중 오류가 발생했습니다.", "error");
+        return;
+      }
+
+      const prepareData = await prepareResponse.json();
+      if (!prepareResponse.ok) {
+        setStatus(prepareData.error || "업로드를 준비할 수 없습니다.", "error");
+        return;
+      }
+
+      const uploadPayload = new FormData();
+      Object.entries(prepareData.fields || {}).forEach(([key, value]) => {
+        uploadPayload.append(key, `${value}`);
+      });
+      uploadPayload.append("file", file);
+
+      setStatus("이미지를 업로드하고 있습니다.");
+
+      let uploadResponse;
+      try {
+        uploadResponse = await fetch(prepareData.upload_url, {
+          method: "POST",
+          body: uploadPayload,
+          mode: "cors",
+        });
+      } catch {
+        setStatus("이미지 업로드에 실패했습니다.", "error");
+        return;
+      }
+
+      if (!uploadResponse.ok) {
+        setStatus("이미지 업로드를 완료하지 못했습니다.", "error");
+        return;
+      }
+
+      updatePreview(`${prepareData.public_url || ""}`);
+      setStatus("업로드가 완료되었습니다. 저장하기를 누르면 반영됩니다.", "success");
+    });
+
+    form.dataset.uploadReady = "true";
+  });
 }
 
 function setCommunityComposeModalOpen(isOpen) {
@@ -912,6 +1042,7 @@ void syncBrowserTimezone();
 initializeWikiToc();
 initializeCodeCopyButtons();
 initializeCommunityTagSelector();
+initializeProfileImageUploader();
 if (document.querySelector("[data-community-compose-modal].flex")) {
   document.body.classList.add("overflow-hidden");
 }

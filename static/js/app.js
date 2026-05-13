@@ -260,6 +260,13 @@ function disconnectWikiTocObserver() {
 }
 
 function initializeProfileImageUploader(root = document) {
+  const allowedContentTypes = new Set([
+    "image/gif",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+  ]);
+
   const forms =
     root instanceof Element
       ? root.matches("[data-profile-edit-form]")
@@ -329,11 +336,20 @@ function initializeProfileImageUploader(root = document) {
         return;
       }
 
+      if (!allowedContentTypes.has(file.type)) {
+        setStatus("지원하지 않는 이미지 형식입니다.", "error");
+        fileInput.value = "";
+        return;
+      }
+
       setStatus("업로드를 준비하고 있습니다.");
 
       let prepareResponse;
       try {
-        const preparePayload = new URLSearchParams({ filename: file.name });
+        const preparePayload = new URLSearchParams({
+          filename: file.name,
+          content_type: file.type,
+        });
         prepareResponse = await fetch(fileInput.dataset.uploadPrepareUrl || "", {
           method: "POST",
           headers: {

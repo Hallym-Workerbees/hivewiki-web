@@ -10,7 +10,6 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from apps.core.models import (
-    Comment,
     CommentLike,
     Post,
     PostBookmark,
@@ -173,13 +172,35 @@ def _profile_bookmarked_wiki_items_queryset(user: HiveUser):
 
 
 def _build_profile_activity_context(user: HiveUser) -> dict:
-    authored_posts = Post.objects.filter(
-        author_user=user,
-        deleted_at__isnull=True,
-    )
-    authored_comments = Comment.objects.filter(
-        author_user=user,
-        deleted_at__isnull=True,
+    activity_totals = HiveUser.objects.filter(pk=user.pk).aggregate(
+        authored_post_count=Count(
+            "posts",
+            filter=Q(posts__deleted_at__isnull=True),
+            distinct=True,
+        ),
+        authored_comment_count=Count(
+            "comments",
+            filter=Q(comments__deleted_at__isnull=True),
+            distinct=True,
+        ),
+        received_post_like_count=Count(
+            "posts__post_likes",
+            filter=Q(posts__deleted_at__isnull=True),
+            distinct=True,
+        ),
+        received_comment_like_count=Count(
+            "comments__comment_likes",
+            filter=Q(comments__deleted_at__isnull=True),
+            distinct=True,
+        ),
+        linked_wiki_post_count=Count(
+            "posts",
+            filter=Q(
+                posts__deleted_at__isnull=True,
+                posts__wiki_documents__isnull=False,
+            ),
+            distinct=True,
+        ),
     )
     recent_posts = list(_profile_authored_posts_queryset(user)[:5])
     liked_posts = _profile_liked_posts_preview(user)
@@ -190,27 +211,23 @@ def _build_profile_activity_context(user: HiveUser) -> dict:
         "activity_stats": [
             {
                 "label": "작성 글",
-                "value": authored_posts.count(),
+                "value": activity_totals["authored_post_count"] or 0,
                 "description": "삭제되지 않은 커뮤니티 게시글 수입니다.",
             },
             {
                 "label": "작성 댓글",
-                "value": authored_comments.count(),
+                "value": activity_totals["authored_comment_count"] or 0,
                 "description": "대화에 참여한 댓글 수입니다.",
             },
             {
                 "label": "받은 좋아요",
-                "value": (
-                    PostLike.objects.filter(post__author_user=user).count()
-                    + CommentLike.objects.filter(comment__author_user=user).count()
-                ),
+                "value": (activity_totals["received_post_like_count"] or 0)
+                + (activity_totals["received_comment_like_count"] or 0),
                 "description": "게시글과 댓글이 받은 좋아요 합계입니다.",
             },
             {
                 "label": "연결한 위키",
-                "value": authored_posts.filter(wiki_documents__isnull=False)
-                .distinct()
-                .count(),
+                "value": activity_totals["linked_wiki_post_count"] or 0,
                 "description": "게시글에서 참조한 위키가 있는 글 수입니다.",
             },
         ],
@@ -648,6 +665,7 @@ def profile_image_upload_prepare_view(request):
         payload = build_profile_image_upload_payload(
             user=request.current_user,
             filename=request.POST.get("filename", ""),
+            content_type=request.POST.get("content_type", ""),
         )
     except ProfileImageUploadError as exc:
         return JsonResponse({"error": str(exc)}, status=400)

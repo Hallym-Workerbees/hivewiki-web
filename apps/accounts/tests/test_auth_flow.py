@@ -360,15 +360,66 @@ class AuthFlowTests(TestCase):
             {
                 "username": "renamed_user",
                 "email": "renamed@example.com",
-                "profile_image": "https://example.com/updated.png",
+                "profile_image": "https://cdn.example.com/hivewiki-profile-images/profiles/test/updated.png",
             },
         )
 
         self.assertRedirects(response, "/me/")
         user.refresh_from_db()
+        user.refresh_from_db()
         self.assertEqual(user.username, "renamed_user")
         self.assertEqual(user.email, "renamed@example.com")
-        self.assertEqual(user.profile_image, "https://example.com/updated.png")
+        self.assertEqual(
+            user.profile_image,
+            "https://cdn.example.com/hivewiki-profile-images/profiles/test/updated.png",
+        )
+
+    def test_profile_edit_allows_keeping_existing_external_profile_image(self):
+        user = HiveUser.objects.create(
+            username="profile_user",
+            email="profile@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+            profile_image="https://avatars.example.com/current.png",
+        )
+        self._login(user)
+
+        response = self.client.post(
+            "/me/profile/",
+            {
+                "username": "renamed_user",
+                "email": "renamed@example.com",
+                "profile_image": "https://avatars.example.com/current.png",
+            },
+        )
+
+        self.assertRedirects(response, "/me/")
+        user.refresh_from_db()
+        self.assertEqual(user.profile_image, "https://avatars.example.com/current.png")
+
+    def test_profile_edit_rejects_profile_image_outside_public_upload_base(self):
+        user = HiveUser.objects.create(
+            username="profile_user",
+            email="profile@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+        self._login(user)
+
+        response = self.client.post(
+            "/me/profile/",
+            {
+                "username": "profile_user",
+                "email": "profile@example.com",
+                "profile_image": "https://evil.example.com/avatar.png",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            "허용된 이미지 업로드 경로만 사용할 수 있습니다.",
+            response.context["form"].errors["profile_image"],
+        )
 
     @patch("apps.accounts.services.boto3.client")
     def test_profile_image_upload_prepare_returns_presigned_payload(
@@ -386,7 +437,7 @@ class AuthFlowTests(TestCase):
 
         response = self.client.post(
             "/me/profile/image-upload/prepare/",
-            {"filename": "avatar.png"},
+            {"filename": "avatar.png", "content_type": "image/png"},
         )
 
         self.assertEqual(response.status_code, 200)
@@ -414,7 +465,7 @@ class AuthFlowTests(TestCase):
 
         response = self.client.post(
             "/me/profile/image-upload/prepare/",
-            {"filename": "notes.txt"},
+            {"filename": "notes.txt", "content_type": "text/plain"},
         )
 
         self.assertEqual(response.status_code, 400)

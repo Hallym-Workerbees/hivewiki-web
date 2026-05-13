@@ -33,6 +33,14 @@ OAUTH_ACTION_LINK = "link"
 USER_SESSION_KEYS_PREFIX = "user_session_keys"
 PENDING_OAUTH_CONFIRM_SALT = "accounts.pending_oauth_confirm"
 PENDING_OAUTH_CONFIRM_MAX_AGE_SECONDS = 600
+ALLOWED_PROFILE_IMAGE_CONTENT_TYPES = frozenset(
+    {
+        "image/gif",
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -71,6 +79,20 @@ def _guess_content_type(filename: str) -> str:
     return guessed_type or "application/octet-stream"
 
 
+def _normalize_upload_content_type(*, filename: str, content_type: str) -> str:
+    normalized_content_type = (content_type or "").strip().lower()
+    guessed_content_type = _guess_content_type(filename).lower()
+
+    if (
+        normalized_content_type
+        and normalized_content_type in ALLOWED_PROFILE_IMAGE_CONTENT_TYPES
+    ):
+        return normalized_content_type
+    if guessed_content_type in ALLOWED_PROFILE_IMAGE_CONTENT_TYPES:
+        return guessed_content_type
+    raise ProfileImageUploadError("이미지 파일만 업로드할 수 있습니다.")
+
+
 def _build_s3_upload_client():
     client_kwargs = {"region_name": settings.AWS_S3_UPLOAD_REGION}
     if settings.AWS_S3_UPLOAD_ENDPOINT_URL:
@@ -84,7 +106,12 @@ def _build_s3_upload_client():
     return boto3.client("s3", **client_kwargs)
 
 
-def build_profile_image_upload_payload(*, user: HiveUser, filename: str) -> dict:
+def build_profile_image_upload_payload(
+    *,
+    user: HiveUser,
+    filename: str,
+    content_type: str,
+) -> dict:
     if not _s3_upload_configured():
         raise ProfileImageUploadError("S3 업로드 설정이 아직 완료되지 않았습니다.")
 
@@ -92,9 +119,10 @@ def build_profile_image_upload_payload(*, user: HiveUser, filename: str) -> dict
     if not normalized_filename:
         raise ProfileImageUploadError("업로드할 파일 이름이 필요합니다.")
 
-    content_type = _guess_content_type(normalized_filename)
-    if not content_type.startswith("image/"):
-        raise ProfileImageUploadError("이미지 파일만 업로드할 수 있습니다.")
+    content_type = _normalize_upload_content_type(
+        filename=normalized_filename,
+        content_type=content_type,
+    )
 
     prefix = settings.AWS_S3_PROFILE_IMAGE_PREFIX.strip("/").replace("//", "/")
     file_extension = Path(normalized_filename).suffix.lower()[:10]

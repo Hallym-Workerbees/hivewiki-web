@@ -1,4 +1,5 @@
 from django import forms
+from django.conf import settings
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.validators import RegexValidator
@@ -142,7 +143,17 @@ class ProfileEditForm(forms.ModelForm):
 
     def clean_profile_image(self):
         profile_image = (self.cleaned_data.get("profile_image") or "").strip()
-        return profile_image or ""
+        if not profile_image:
+            return ""
+        if self.instance.pk and profile_image == (self.instance.profile_image or ""):
+            return profile_image
+
+        public_base_url = settings.AWS_S3_UPLOAD_PUBLIC_BASE_URL.rstrip("/")
+        if not public_base_url or not profile_image.startswith(f"{public_base_url}/"):
+            raise forms.ValidationError(
+                "허용된 이미지 업로드 경로만 사용할 수 있습니다."
+            )
+        return profile_image
 
     def clean_username(self):
         username = self.cleaned_data["username"].strip()

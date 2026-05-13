@@ -23,11 +23,13 @@ from .models import (
     CommentLike,
     IngestionJob,
     Post,
+    PostBookmark,
     PostLike,
     PostStatus,
     Source,
     SourceDocument,
     Tag,
+    WikiBookmark,
     WikiDocument,
     WikiDocumentStatus,
 )
@@ -281,6 +283,7 @@ def community_detail(request, post_id):
         _community_visible_posts_queryset(user=request.current_user), pk=post_id
     )
     comment_form = CommentForm(initial={"parent_comment_id": ""})
+    focus_comment_id = request.GET.get("comment", "").strip()
     return render(
         request,
         "pages/community/detail.html",
@@ -288,6 +291,7 @@ def community_detail(request, post_id):
             post=post,
             comment_form=comment_form,
             current_user=request.current_user,
+            focus_comment_id=focus_comment_id,
         ),
     )
 
@@ -345,6 +349,34 @@ def community_post_like_toggle(request, post_id):
         return render(
             request,
             "partials/community_post_like_button.html",
+            {
+                "post": post,
+                "current_user": request.current_user,
+                "htmx_enabled": True,
+            },
+        )
+    return redirect(request.POST.get("next") or post.get_absolute_url())
+
+
+@login_required
+@require_POST
+def community_post_bookmark_toggle(request, post_id):
+    post = get_object_or_404(
+        _community_visible_posts_queryset(user=request.current_user), pk=post_id
+    )
+    bookmark = PostBookmark.objects.filter(post=post, user=request.current_user)
+    if bookmark.exists():
+        bookmark.delete()
+    else:
+        PostBookmark.objects.create(post=post, user=request.current_user)
+    post.is_bookmarked_by_current_user = PostBookmark.objects.filter(
+        post=post,
+        user=request.current_user,
+    ).exists()
+    if request.headers.get("HX-Request") == "true":
+        return render(
+            request,
+            "partials/community_post_bookmark_button.html",
             {
                 "post": post,
                 "current_user": request.current_user,
@@ -616,6 +648,12 @@ def wiki_detail(request, slug):
     share_url = request.build_absolute_uri(
         reverse("wiki_detail", kwargs={"slug": document.slug})
     )
+    document.is_bookmarked_by_current_user = str(
+        document.pk
+    ) in _get_bookmarked_wiki_ids(
+        request.current_user,
+        [document],
+    )
     return render(
         request,
         "pages/wiki/detail.html",
@@ -658,6 +696,47 @@ def wiki_detail(request, slug):
                 selected_tag_names=selected_tag_names,
             ),
         },
+    )
+
+
+@login_required
+@require_POST
+def wiki_bookmark_toggle(request, slug):
+    document = get_object_or_404(
+        WikiDocument.objects.filter(
+            current_revision__isnull=False,
+            status=WikiDocumentStatus.PUBLISHED,
+        ),
+        slug=slug,
+    )
+    bookmark = WikiBookmark.objects.filter(
+        wiki_document=document,
+        user=request.current_user,
+    )
+    if bookmark.exists():
+        bookmark.delete()
+    else:
+        WikiBookmark.objects.create(
+            wiki_document=document,
+            user=request.current_user,
+        )
+    document.is_bookmarked_by_current_user = WikiBookmark.objects.filter(
+        wiki_document=document,
+        user=request.current_user,
+    ).exists()
+    if request.headers.get("HX-Request") == "true":
+        return render(
+            request,
+            "partials/wiki_bookmark_button.html",
+            {
+                "document": document,
+                "current_user": request.current_user,
+                "htmx_enabled": True,
+            },
+        )
+    return redirect(
+        request.POST.get("next")
+        or reverse("wiki_detail", kwargs={"slug": document.slug})
     )
 
 
@@ -917,6 +996,36 @@ def _get_liked_post_ids(user, posts):
     }
 
 
+def _get_bookmarked_post_ids(user, posts):
+    if user is None:
+        return set()
+    post_ids = [post.pk for post in posts]
+    if not post_ids:
+        return set()
+    return {
+        str(post_id)
+        for post_id in PostBookmark.objects.filter(
+            user=user,
+            post_id__in=post_ids,
+        ).values_list("post_id", flat=True)
+    }
+
+
+def _get_bookmarked_wiki_ids(user, documents):
+    if user is None:
+        return set()
+    document_ids = [document.pk for document in documents]
+    if not document_ids:
+        return set()
+    return {
+        str(document_id)
+        for document_id in WikiBookmark.objects.filter(
+            user=user,
+            wiki_document_id__in=document_ids,
+        ).values_list("wiki_document_id", flat=True)
+    }
+
+
 def _collect_comment_ids(comments):
     comment_ids = []
     for comment in comments:
@@ -951,6 +1060,7 @@ def _build_community_detail_context(
     post,
     comment_form,
     current_user,
+    focus_comment_id="",
     reply_target_id="",
     post_edit_form=None,
     editing_post=False,
@@ -958,16 +1068,18 @@ def _build_community_detail_context(
     editing_comment_id="",
 ):
     expanded_comment_ids = set()
-    if reply_target_id or editing_comment_id:
+    if reply_target_id or editing_comment_id or focus_comment_id:
         comments = _get_comment_tree(post)
-        target_comment_id = reply_target_id or editing_comment_id
+        target_comment_id = reply_target_id or editing_comment_id or focus_comment_id
         expanded_comment_ids = _get_comment_ancestor_ids(post, target_comment_id)
     else:
         comments = _get_top_level_comments(post)
     linked_wiki_documents = _get_wiki_documents_for_post(post)
     liked_post_ids = _get_liked_post_ids(current_user, [post])
+    bookmarked_post_ids = _get_bookmarked_post_ids(current_user, [post])
     liked_comment_ids = _get_liked_comment_ids(current_user, comments)
     post.is_liked_by_current_user = str(post.pk) in liked_post_ids
+    post.is_bookmarked_by_current_user = str(post.pk) in bookmarked_post_ids
     _mark_liked_comments(comments, liked_comment_ids)
     related_posts = list(
         _community_hot_posts_queryset().exclude(pk=post.pk).filter(~Q(pk=post.pk))[:4]

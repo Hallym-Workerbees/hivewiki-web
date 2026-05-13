@@ -1,4 +1,5 @@
 from pathlib import Path
+from urllib.parse import urlparse
 
 import environ
 
@@ -32,6 +33,13 @@ GOOGLE_OAUTH_CLIENT_ID = env("GOOGLE_OAUTH_CLIENT_ID", default="")
 GOOGLE_OAUTH_CLIENT_SECRET = env("GOOGLE_OAUTH_CLIENT_SECRET", default="")
 GITHUB_OAUTH_CLIENT_ID = env("GITHUB_OAUTH_CLIENT_ID", default="")
 GITHUB_OAUTH_CLIENT_SECRET = env("GITHUB_OAUTH_CLIENT_SECRET", default="")
+AWS_S3_UPLOAD_ACCESS_KEY_ID = env("AWS_S3_UPLOAD_ACCESS_KEY_ID", default="")
+AWS_S3_UPLOAD_SECRET_ACCESS_KEY = env("AWS_S3_UPLOAD_SECRET_ACCESS_KEY", default="")
+AWS_S3_UPLOAD_REGION = env("AWS_S3_UPLOAD_REGION", default="")
+AWS_S3_UPLOAD_BUCKET = env("AWS_S3_UPLOAD_BUCKET", default="")
+AWS_S3_UPLOAD_ENDPOINT_URL = env("AWS_S3_UPLOAD_ENDPOINT_URL", default="")
+AWS_S3_UPLOAD_PUBLIC_BASE_URL = env("AWS_S3_UPLOAD_PUBLIC_BASE_URL", default="")
+AWS_S3_PROFILE_IMAGE_PREFIX = env("AWS_S3_PROFILE_IMAGE_PREFIX", default="profiles")
 
 
 # Application definition
@@ -184,6 +192,19 @@ STORAGES = {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
+
+if not AWS_S3_UPLOAD_PUBLIC_BASE_URL and AWS_S3_UPLOAD_BUCKET:
+    if AWS_S3_UPLOAD_ENDPOINT_URL:
+        endpoint = urlparse(AWS_S3_UPLOAD_ENDPOINT_URL)
+        endpoint_base = endpoint.netloc or endpoint.path
+        if endpoint_base:
+            AWS_S3_UPLOAD_PUBLIC_BASE_URL = (
+                f"{endpoint.scheme or 'https'}://{endpoint_base}/{AWS_S3_UPLOAD_BUCKET}"
+            )
+    elif AWS_S3_UPLOAD_REGION:
+        AWS_S3_UPLOAD_PUBLIC_BASE_URL = (
+            f"https://{AWS_S3_UPLOAD_BUCKET}.s3.{AWS_S3_UPLOAD_REGION}.amazonaws.com"
+        )
 
 LOGGING = {
     "version": 1,

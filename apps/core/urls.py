@@ -52,6 +52,11 @@ urlpatterns = [
         name="community_post_like_toggle",
     ),
     path(
+        "community/<uuid:post_id>/bookmark/",
+        views.community_post_bookmark_toggle,
+        name="community_post_bookmark_toggle",
+    ),
+    path(
         "community/<uuid:post_id>/comments/",
         views.community_comment_create,
         name="community_comment_create",
@@ -77,6 +82,11 @@ urlpatterns = [
         name="community_wiki_picker",
     ),
     path("wiki/", views.wiki_home, name="wiki_home"),
+    path(
+        "wiki/<slug:slug>/bookmark/",
+        views.wiki_bookmark_toggle,
+        name="wiki_bookmark_toggle",
+    ),
     path("wiki/<slug:slug>/", views.wiki_detail, name="wiki_detail"),
     path("search/", views.integrated_search, name="integrated_search"),
 ]

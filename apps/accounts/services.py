@@ -1,4 +1,5 @@
 import math
+import mimetypes
 import secrets
 import time
 import urllib.error
@@ -7,8 +8,11 @@ import urllib.request
 from dataclasses import dataclass
 from importlib import import_module
 from json import loads
+from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.core import signing
@@ -29,6 +33,14 @@ OAUTH_ACTION_LINK = "link"
 USER_SESSION_KEYS_PREFIX = "user_session_keys"
 PENDING_OAUTH_CONFIRM_SALT = "accounts.pending_oauth_confirm"
 PENDING_OAUTH_CONFIRM_MAX_AGE_SECONDS = 600
+ALLOWED_PROFILE_IMAGE_CONTENT_TYPES = frozenset(
+    {
+        "image/gif",
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -46,8 +58,103 @@ class OAuthError(Exception):
     pass
 
 
+class ProfileImageUploadError(Exception):
+    pass
+
+
 def inactive_account_message() -> str:
     return "이 계정은 비활성화되어 로그인할 수 없습니다. 관리자에게 문의해 주세요."
+
+
+def _s3_upload_configured() -> bool:
+    return bool(
+        settings.AWS_S3_UPLOAD_BUCKET
+        and settings.AWS_S3_UPLOAD_REGION
+        and settings.AWS_S3_UPLOAD_PUBLIC_BASE_URL
+    )
+
+
+def _guess_content_type(filename: str) -> str:
+    guessed_type, _ = mimetypes.guess_type(filename or "")
+    return guessed_type or "application/octet-stream"
+
+
+def _normalize_upload_content_type(*, filename: str, content_type: str) -> str:
+    normalized_content_type = (content_type or "").strip().lower()
+    guessed_content_type = _guess_content_type(filename).lower()
+
+    if (
+        normalized_content_type
+        and normalized_content_type in ALLOWED_PROFILE_IMAGE_CONTENT_TYPES
+    ):
+        return normalized_content_type
+    if guessed_content_type in ALLOWED_PROFILE_IMAGE_CONTENT_TYPES:
+        return guessed_content_type
+    raise ProfileImageUploadError("이미지 파일만 업로드할 수 있습니다.")
+
+
+def _build_s3_upload_client():
+    client_kwargs = {"region_name": settings.AWS_S3_UPLOAD_REGION}
+    if settings.AWS_S3_UPLOAD_ENDPOINT_URL:
+        client_kwargs["endpoint_url"] = settings.AWS_S3_UPLOAD_ENDPOINT_URL
+    if settings.AWS_S3_UPLOAD_ACCESS_KEY_ID:
+        client_kwargs["aws_access_key_id"] = settings.AWS_S3_UPLOAD_ACCESS_KEY_ID
+    if settings.AWS_S3_UPLOAD_SECRET_ACCESS_KEY:
+        client_kwargs["aws_secret_access_key"] = (
+            settings.AWS_S3_UPLOAD_SECRET_ACCESS_KEY
+        )
+    return boto3.client("s3", **client_kwargs)
+
+
+def build_profile_image_upload_payload(
+    *,
+    user: HiveUser,
+    filename: str,
+    content_type: str,
+) -> dict:
+    if not _s3_upload_configured():
+        raise ProfileImageUploadError("S3 업로드 설정이 아직 완료되지 않았습니다.")
+
+    normalized_filename = (filename or "").strip()
+    if not normalized_filename:
+        raise ProfileImageUploadError("업로드할 파일 이름이 필요합니다.")
+
+    content_type = _normalize_upload_content_type(
+        filename=normalized_filename,
+        content_type=content_type,
+    )
+
+    prefix = settings.AWS_S3_PROFILE_IMAGE_PREFIX.strip("/").replace("//", "/")
+    file_extension = Path(normalized_filename).suffix.lower()[:10]
+    object_key = (
+        f"{prefix}/{user.id}/{secrets.token_urlsafe(16)}{file_extension}"
+        if prefix
+        else f"{user.id}/{secrets.token_urlsafe(16)}{file_extension}"
+    )
+    client = _build_s3_upload_client()
+    try:
+        payload = client.generate_presigned_post(
+            Bucket=settings.AWS_S3_UPLOAD_BUCKET,
+            Key=object_key,
+            Fields={"Content-Type": content_type},
+            Conditions=[
+                {"Content-Type": content_type},
+                ["content-length-range", 1, 5 * 1024 * 1024],
+            ],
+            ExpiresIn=600,
+        )
+    except (BotoCoreError, ClientError) as exc:
+        raise ProfileImageUploadError(
+            "S3 업로드 서명을 생성하지 못했습니다. 설정을 확인해 주세요."
+        ) from exc
+    public_base_url = settings.AWS_S3_UPLOAD_PUBLIC_BASE_URL.rstrip("/")
+
+    return {
+        "upload_url": payload["url"],
+        "fields": payload["fields"],
+        "public_url": f"{public_base_url}/{object_key}",
+        "max_file_size": 5 * 1024 * 1024,
+    }
 
 
 def _normalize_identifier(value: str) -> str:
@@ -526,6 +633,7 @@ def exchange_oauth_code_for_profile(
                 "provider_user_id": profile.get("sub"),
                 "email": email.lower(),
                 "provider_email": email.lower(),
+                "profile_image": (profile.get("picture") or "").strip(),
                 "username_hint": profile.get("given_name")
                 or profile.get("name")
                 or email.split("@")[0],
@@ -548,6 +656,7 @@ def exchange_oauth_code_for_profile(
                 "provider_user_id": str(profile.get("id")),
                 "email": email,
                 "provider_email": email,
+                "profile_image": (profile.get("avatar_url") or "").strip(),
                 "username_hint": profile.get("login") or email.split("@")[0],
             }
     except (urllib.error.URLError, TimeoutError, ValueError) as exc:
@@ -571,6 +680,17 @@ def _build_unique_username(base_value: str) -> str:
     return candidate
 
 
+def _sync_profile_image_from_oauth_profile(
+    *, user: HiveUser, profile: dict
+) -> HiveUser:
+    profile_image = (profile.get("profile_image") or "").strip()
+    if user.profile_image or not profile_image:
+        return user
+    user.profile_image = profile_image
+    user.save(update_fields=["profile_image", "updated_at"])
+    return user
+
+
 def get_or_create_user_from_oauth_profile(*, provider: str, profile: dict) -> HiveUser:
     provider_user_id = profile["provider_user_id"]
     email = profile["email"]
@@ -590,6 +710,10 @@ def get_or_create_user_from_oauth_profile(*, provider: str, profile: dict) -> Hi
                 oauth_account.provider_email = provider_email
                 oauth_account.last_login_at = timezone.now()
                 oauth_account.save(update_fields=["provider_email", "last_login_at"])
+                _sync_profile_image_from_oauth_profile(
+                    user=oauth_account.user,
+                    profile=profile,
+                )
                 return oauth_account.user
 
             user = (
@@ -609,6 +733,7 @@ def get_or_create_user_from_oauth_profile(*, provider: str, profile: dict) -> Hi
                     email=email,
                     password_hash=None,
                     status=UserStatus.ACTIVE,
+                    profile_image=(profile.get("profile_image") or "").strip() or None,
                 )
 
             OAuthAccount.objects.create(
@@ -655,6 +780,10 @@ def link_oauth_account_to_user(
                 existing_account.provider_email = provider_email
                 existing_account.last_login_at = timezone.now()
                 existing_account.save(update_fields=["provider_email", "last_login_at"])
+                _sync_profile_image_from_oauth_profile(
+                    user=locked_user,
+                    profile=profile,
+                )
                 return existing_account
 
             existing_provider_link = locked_user.oauth_accounts.filter(
@@ -669,6 +798,10 @@ def link_oauth_account_to_user(
                 provider_user_id=provider_user_id,
                 provider_email=provider_email,
                 last_login_at=timezone.now(),
+            )
+            _sync_profile_image_from_oauth_profile(
+                user=locked_user,
+                profile=profile,
             )
             return oauth_account
     except IntegrityError as exc:

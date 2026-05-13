@@ -4,12 +4,9 @@
 {% endblock title %}
 {% block app_content %}
     <section class="mx-auto max-w-7xl space-y-8">
-        {% include "partials/section_header.html" with eyebrow="Wiki" title="위키 둘러보기" description="주제나 키워드로 문서를 찾고, 최근 정리된 내용을 바로 확인할 수 있습니다." %}
+        {% include "partials/section_header.html" with eyebrow="Wiki" title="위키 둘러보기" %}
         <div class="rounded-[2rem] bg-surface-container-low p-8">
             <h2 class="font-headline text-4xl font-black tracking-tight">찾고 싶은 문서를 바로 검색하세요</h2>
-            <p class="mt-3 max-w-2xl text-sm leading-7 text-on-surface-variant">
-                운영 기록, 수업 정보, 개발 메모처럼 반복해서 찾게 되는 내용을 빠르게 검색해보세요.
-            </p>
             <div class="mt-8 max-w-3xl">
                 {% include "partials/search_bar.html" with placeholder="운영, 수업, 개발, 회고를 검색하세요" action="/wiki/" target="#wiki-search-results" push_url="false" value=query %}
             </div>

@@ -1,6 +1,7 @@
 from datetime import timedelta
 from unittest.mock import Mock, patch
 
+from botocore.exceptions import NoCredentialsError
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.cache import cache
 from django.test import TestCase, override_settings
@@ -472,6 +473,32 @@ class AuthFlowTests(TestCase):
         self.assertEqual(
             response.json()["error"],
             "이미지 파일만 업로드할 수 있습니다.",
+        )
+
+    @patch("apps.accounts.services.boto3.client")
+    def test_profile_image_upload_prepare_returns_400_when_s3_credentials_missing(
+        self, mock_boto3_client
+    ):
+        user = HiveUser.objects.create(
+            username="upload_user",
+            email="upload@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+        self._login(user)
+        mock_s3_client = Mock()
+        mock_s3_client.generate_presigned_post.side_effect = NoCredentialsError()
+        mock_boto3_client.return_value = mock_s3_client
+
+        response = self.client.post(
+            "/me/profile/image-upload/prepare/",
+            {"filename": "avatar.png", "content_type": "image/png"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()["error"],
+            "S3 업로드 자격 증명을 찾지 못했습니다. Pod Identity 또는 액세스 키 설정을 확인해 주세요.",
         )
 
     def test_password_change_updates_hash_and_allows_new_login(self):

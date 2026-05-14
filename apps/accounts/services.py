@@ -12,7 +12,12 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import boto3
-from botocore.exceptions import BotoCoreError, ClientError
+from botocore.exceptions import (
+    BotoCoreError,
+    ClientError,
+    NoCredentialsError,
+    PartialCredentialsError,
+)
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.core import signing
@@ -143,6 +148,10 @@ def build_profile_image_upload_payload(
             ],
             ExpiresIn=600,
         )
+    except (NoCredentialsError, PartialCredentialsError, AttributeError) as exc:
+        raise ProfileImageUploadError(
+            "S3 업로드 자격 증명을 찾지 못했습니다. Pod Identity 또는 액세스 키 설정을 확인해 주세요."
+        ) from exc
     except (BotoCoreError, ClientError) as exc:
         raise ProfileImageUploadError(
             "S3 업로드 서명을 생성하지 못했습니다. 설정을 확인해 주세요."

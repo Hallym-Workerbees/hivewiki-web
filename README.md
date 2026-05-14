@@ -156,6 +156,39 @@ Commit message는 **영어로 작성해야 하며**, Conventional Commits 규칙
 OAuth callback URL은 현재 요청의 host/scheme를 기준으로 서버에서 생성합니다.  
 배포 환경에서는 프록시/Ingress 설정과 `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `DJANGO_SECURE_PROXY_SSL_HEADER`가 올바르게 맞아 있어야 합니다.
 
+### S3 프로필 이미지 업로드
+
+- `AWS_S3_UPLOAD_BUCKET`: 프로필 이미지 업로드 대상 버킷 이름
+- `AWS_S3_UPLOAD_REGION`: 업로드 대상 리전
+- `AWS_S3_UPLOAD_ACCESS_KEY_ID`: S3 접근 키. IAM role 등을 쓰지 않으면 필요
+- `AWS_S3_UPLOAD_SECRET_ACCESS_KEY`: S3 시크릿 키. IAM role 등을 쓰지 않으면 필요
+- `AWS_S3_UPLOAD_ENDPOINT_URL`: S3 호환 스토리지용 endpoint URL. AWS S3 기본 endpoint를 쓸 때는 비워둘 수 있음
+- `AWS_S3_UPLOAD_PUBLIC_BASE_URL`: 업로드 후 사용자에게 노출할 공개 URL prefix
+- `AWS_S3_PROFILE_IMAGE_PREFIX`: object key prefix. 기본값 `profiles`
+
+프로필 이미지 업로드가 활성화되려면 애플리케이션 관점에서 최소한 아래 값이 필요합니다.
+
+- `AWS_S3_UPLOAD_BUCKET`
+- `AWS_S3_UPLOAD_REGION`
+- `AWS_S3_UPLOAD_PUBLIC_BASE_URL`
+
+`AWS_S3_UPLOAD_PUBLIC_BASE_URL`은 명시적으로 넣는 것을 권장합니다. 이 값은 presigned POST 업로드 대상이 아니라 업로드 완료 후 저장할 공개 URL의 prefix로 사용됩니다. 따라서 다음과 같은 값이 가능합니다.
+
+- AWS S3 기본 공개 URL: `https://my-bucket.s3.ap-northeast-2.amazonaws.com`
+- CloudFront 기본 도메인: `https://d123exampleabcd.cloudfront.net`
+- CloudFront 커스텀 도메인: `https://media.example.com`
+
+예를 들어 `AWS_S3_UPLOAD_PUBLIC_BASE_URL=https://media.example.com` 이고 `AWS_S3_PROFILE_IMAGE_PREFIX=profiles` 라면 최종 이미지 URL은 `https://media.example.com/profiles/<user-id>/<random>.png` 형태가 됩니다.
+
+`AWS_S3_UPLOAD_ENDPOINT_URL`은 자동 생성되지 않습니다. AWS S3를 그대로 쓰는 경우에는 비워둘 수 있고, MinIO/R2/Object Storage 같은 S3 호환 스토리지를 쓸 때만 직접 지정하면 됩니다.
+
+반대로 `AWS_S3_UPLOAD_PUBLIC_BASE_URL`은 비어 있을 경우 아래 규칙으로 자동 유도될 수 있습니다.
+
+- `AWS_S3_UPLOAD_ENDPOINT_URL`이 있으면 `https://<endpoint>/<bucket>` 형태
+- 아니면 `https://<bucket>.s3.<region>.amazonaws.com` 형태
+
+다만 CloudFront를 쓰는 배포 환경에서는 자동 유도값 대신 실제 공개 도메인을 명시하는 편이 안전합니다.
+
 ### 데이터베이스 / 캐시
 
 - `POSTGRES_DB`: PostgreSQL 데이터베이스 이름

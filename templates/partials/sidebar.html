@@ -15,6 +15,7 @@
         {% url 'wiki_home' as wiki_home_url %}
         {% url 'integrated_search' as integrated_search_url %}
         {% url 'mypage' as mypage_url %}
+        {% url 'mypage_notifications' as mypage_notifications_url %}
         {% url 'admin_console' as admin_console_url %}
         <a href="{% if current_user %}{% url 'dashboard' %}{% else %}{% url 'public_main' %}{% endif %}"
            class="block rounded-2xl px-4 py-3 transition {% if request.path == dashboard_url %}bg-surface-container-high font-bold text-primary{% else %}text-on-surface-variant hover:bg-surface-container-high{% endif %}">홈</a>
@@ -27,6 +28,7 @@
         {% if current_user %}
             <a href="{% url 'mypage' %}"
                class="block rounded-2xl px-4 py-3 transition {% if request.path == mypage_url %}bg-surface-container-high font-bold text-primary{% else %}text-on-surface-variant hover:bg-surface-container-high{% endif %}">마이페이지</a>
+            {% include "partials/notification_sidebar_link.html" %}
         {% endif %}
         {% if current_user and current_user.role == "admin" %}
             <a href="{% url 'admin_console' %}"

@@ -45,6 +45,21 @@ urlpatterns = [
         views.mypage_bookmarked_wiki_view,
         name="mypage_bookmarked_wiki",
     ),
+    path(
+        "me/notifications/",
+        views.mypage_notifications_view,
+        name="mypage_notifications",
+    ),
+    path(
+        "me/notifications/mark-all-read/",
+        views.notifications_mark_all_read_view,
+        name="notifications_mark_all_read",
+    ),
+    path(
+        "me/notifications/<uuid:notification_id>/read/",
+        views.notification_mark_read_view,
+        name="notification_mark_read",
+    ),
     path("me/profile/", views.profile_edit_view, name="profile_edit"),
     path(
         "me/profile/image-upload/prepare/",

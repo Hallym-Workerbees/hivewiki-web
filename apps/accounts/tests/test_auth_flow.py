@@ -7,7 +7,15 @@ from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
-from apps.accounts.models import HiveUser, OAuthAccount, OAuthProvider, UserStatus
+from apps.accounts.models import (
+    HiveUser,
+    Notification,
+    NotificationTargetType,
+    NotificationType,
+    OAuthAccount,
+    OAuthProvider,
+    UserStatus,
+)
 from apps.accounts.services import (
     SESSION_USER_ID_KEY,
     TIMEZONE_SESSION_KEY,
@@ -219,6 +227,115 @@ class AuthFlowTests(TestCase):
         self.assertContains(response, "첫 글")
         self.assertContains(response, "비밀번호 변경")
         self.assertContains(response, "Google 연결")
+        self.assertContains(response, "/me/notifications/")
+
+    def test_notifications_page_renders_empty_state_when_table_is_unavailable(self):
+        user = HiveUser.objects.create(
+            username="notice_user",
+            email="notice@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+        self._login(user)
+
+        response = self.client.get("/me/notifications/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "표시할 알림이 아직 없습니다.")
+
+    def test_mark_all_notifications_read_redirects_without_table(self):
+        user = HiveUser.objects.create(
+            username="notice_user_2",
+            email="notice2@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+        self._login(user)
+
+        response = self.client.post("/me/notifications/mark-all-read/")
+
+        self.assertRedirects(response, "/me/notifications/")
+
+    def test_notification_mark_read_htmx_updates_panel_without_redirect(self):
+        user = HiveUser.objects.create(
+            username="notice_user_3",
+            email="notice3@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+        notification = Notification.objects.create(
+            user=user,
+            notification_type=NotificationType.POST_LIKED,
+            title="알림 테스트",
+            target_type=NotificationTargetType.POST,
+        )
+        self._login(user)
+
+        response = self.client.post(
+            f"/me/notifications/{notification.id}/read/",
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="notifications-panel"', html=False)
+        self.assertContains(response, 'hx-swap-oob="outerHTML"', html=False)
+        notification.refresh_from_db()
+        self.assertTrue(notification.is_read)
+
+    def test_notifications_page_shows_target_post_title(self):
+        user = HiveUser.objects.create(
+            username="notice_user_4",
+            email="notice4@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+        post = Post.objects.create(
+            author_user=user,
+            content_markdown="# 알림 대상 글\n\n본문입니다.",
+            status=PostStatus.PUBLISHED,
+        )
+        Notification.objects.create(
+            user=user,
+            notification_type=NotificationType.POST_LIKED,
+            title="누군가 좋아요를 눌렀습니다.",
+            target_type=NotificationTargetType.POST,
+            target_id=post.id,
+        )
+        self._login(user)
+
+        response = self.client.get("/me/notifications/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "알림 대상 글")
+
+    def test_notifications_page_uses_pagination_with_htmx_load_more(self):
+        user = HiveUser.objects.create(
+            username="notice_user_5",
+            email="notice5@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+        for index in range(21):
+            Notification.objects.create(
+                user=user,
+                notification_type=NotificationType.POST_LIKED,
+                title=f"알림 {index}",
+            )
+        self._login(user)
+
+        first_response = self.client.get("/me/notifications/")
+        second_response = self.client.get(
+            "/me/notifications/?page=2",
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
+        self.assertContains(first_response, "알림 20")
+        self.assertNotContains(first_response, "알림 0")
+        self.assertContains(first_response, "알림을 더 불러오는 중...")
+        self.assertContains(second_response, "알림 0")
+        self.assertNotContains(second_response, "알림 20")
 
     def test_mypage_liked_comments_page_links_to_comment_anchor(self):
         user = HiveUser.objects.create(

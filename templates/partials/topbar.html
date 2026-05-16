@@ -4,9 +4,12 @@
             <div class="text-xs font-semibold uppercase tracking-[0.22em] text-stone-400">HiveWiki</div>
             <div class="font-headline text-xl font-extrabold tracking-tight">{{ page_heading|default:"Dashboard" }}</div>
         </div>
-        <div class="hidden items-center gap-4 md:flex">
-            {% include "partials/search_bar.html" with placeholder="위키 문서를 검색하세요" action=search_action|default:"/search/" %}
+        <div class="flex items-center gap-3 md:gap-4">
+            <div class="hidden md:block">
+                {% include "partials/search_bar.html" with placeholder="위키 문서를 검색하세요" action=search_action|default:"/search/" %}
+            </div>
             {% if current_user %}
+                {% include "partials/notification_topbar_link.html" %}
                 <a href="{% url 'mypage' %}"
                    class="rounded-2xl bg-surface-container-low px-4 py-3 text-sm font-semibold text-on-surface-variant">{{ current_user.username }}</a>
             {% endif %}

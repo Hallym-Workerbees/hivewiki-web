@@ -1,8 +1,9 @@
 from collections.abc import Iterable
+from hashlib import sha256
+from datetime import timedelta
 
-from django.db import connections
+from django.core.cache import cache
 from django.db.models import QuerySet
-from django.db.utils import OperationalError, ProgrammingError
 from django.urls import reverse
 from django.utils import timezone
 
@@ -15,25 +16,56 @@ from .models import (
     NotificationType,
 )
 
+UNREAD_NOTIFICATION_COUNT_TTL = 60
+NOTIFICATION_DEDUPE_TTL = 30
 
-def notification_table_exists(using: str = "default") -> bool:
-    connection = connections[using]
-    try:
-        return Notification._meta.db_table in connection.introspection.table_names()
-    except (OperationalError, ProgrammingError):
-        return False
+
+def _unread_notification_count_cache_key(user_id) -> str:
+    return f"notifications:unread-count:{user_id}"
+
+
+def _notification_dedupe_cache_key(
+    *,
+    user_id,
+    notification_type,
+    title: str,
+    body: str,
+    target_type,
+    target_id,
+) -> str:
+    raw_key = "|".join(
+        [
+            str(user_id),
+            str(notification_type),
+            title,
+            body,
+            str(target_type or ""),
+            str(target_id or ""),
+        ]
+    )
+    return f"notifications:dedupe:{sha256(raw_key.encode()).hexdigest()}"
+
+
+def invalidate_unread_notification_count(user: HiveUser | None) -> None:
+    if user is None:
+        return
+    cache.delete(_unread_notification_count_cache_key(user.id))
 
 
 def get_notifications_for_user(user: HiveUser) -> QuerySet[Notification]:
-    if not notification_table_exists():
-        return Notification.objects.none()
     return Notification.objects.filter(user=user).order_by("-created_at", "-id")
 
 
 def get_unread_notification_count(user: HiveUser | None) -> int:
-    if user is None or not notification_table_exists():
+    if user is None:
         return 0
-    return get_notifications_for_user(user).filter(is_read=False).count()
+    cache_key = _unread_notification_count_cache_key(user.id)
+    cached_count = cache.get(cache_key)
+    if cached_count is not None:
+        return cached_count
+    unread_count = get_notifications_for_user(user).filter(is_read=False).count()
+    cache.set(cache_key, unread_count, timeout=UNREAD_NOTIFICATION_COUNT_TTL)
+    return unread_count
 
 
 def create_notification(
@@ -45,33 +77,55 @@ def create_notification(
     target_type: NotificationTargetType | None = None,
     target_id=None,
 ):
-    if not notification_table_exists():
-        return None
-    return Notification.objects.create(
-        user=user,
+    normalized_body = body or ""
+    dedupe_cache_key = _notification_dedupe_cache_key(
+        user_id=user.id,
         notification_type=notification_type,
         title=title[:255],
-        body=body or None,
+        body=normalized_body,
         target_type=target_type,
         target_id=target_id,
     )
+    if not cache.add(dedupe_cache_key, 1, timeout=NOTIFICATION_DEDUPE_TTL):
+        return None
+    existing_cutoff = timezone.now() - timedelta(seconds=NOTIFICATION_DEDUPE_TTL)
+    if Notification.objects.filter(
+        user=user,
+        notification_type=notification_type,
+        title=title[:255],
+        body=normalized_body or None,
+        target_type=target_type,
+        target_id=target_id,
+        created_at__gte=existing_cutoff,
+    ).exists():
+        return None
+    notification = Notification.objects.create(
+        user=user,
+        notification_type=notification_type,
+        title=title[:255],
+        body=normalized_body or None,
+        target_type=target_type,
+        target_id=target_id,
+    )
+    invalidate_unread_notification_count(user)
+    return notification
 
 
 def mark_notification_read(notification: Notification) -> None:
-    if not notification_table_exists() or notification.is_read:
+    if notification.is_read:
         return
     notification.is_read = True
     notification.read_at = timezone.now()
     notification.save(update_fields=["is_read", "read_at"])
+    invalidate_unread_notification_count(notification.user)
 
 
 def mark_all_notifications_read(user: HiveUser) -> None:
-    if not notification_table_exists():
-        return
     get_notifications_for_user(user).filter(is_read=False).update(
         is_read=True,
         read_at=timezone.now(),
     )
+    invalidate_unread_notification_count(user)
 
 
 def attach_notification_targets(

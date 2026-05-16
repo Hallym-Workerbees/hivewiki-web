@@ -113,7 +113,6 @@ class Notification(models.Model):
 
     class Meta:
         db_table = "notifications"
-        managed = False
         ordering = ["-created_at", "-id"]
 
     def __str__(self):

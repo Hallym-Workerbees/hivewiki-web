@@ -16,6 +16,11 @@ from apps.accounts.models import (
     OAuthProvider,
     UserStatus,
 )
+from apps.accounts.notifications import (
+    create_notification,
+    get_unread_notification_count,
+    mark_notification_read,
+)
 from apps.accounts.services import (
     SESSION_USER_ID_KEY,
     TIMEZONE_SESSION_KEY,
@@ -229,7 +234,7 @@ class AuthFlowTests(TestCase):
         self.assertContains(response, "Google 연결")
         self.assertContains(response, "/me/notifications/")
 
-    def test_notifications_page_renders_empty_state_when_table_is_unavailable(self):
+    def test_notifications_page_renders_empty_state(self):
         user = HiveUser.objects.create(
             username="notice_user",
             email="notice@example.com",
@@ -243,7 +248,7 @@ class AuthFlowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "표시할 알림이 아직 없습니다.")
 
-    def test_mark_all_notifications_read_redirects_without_table(self):
+    def test_mark_all_notifications_read_redirects_with_no_notifications(self):
         user = HiveUser.objects.create(
             username="notice_user_2",
             email="notice2@example.com",
@@ -255,6 +260,50 @@ class AuthFlowTests(TestCase):
         response = self.client.post("/me/notifications/mark-all-read/")
 
         self.assertRedirects(response, "/me/notifications/")
+
+    def test_notification_unread_count_cache_is_invalidated_on_read(self):
+        user = HiveUser.objects.create(
+            username="notice_cache",
+            email="notice-cache@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+        notification = Notification.objects.create(
+            user=user,
+            notification_type=NotificationType.POST_LIKED,
+            title="캐시 테스트",
+        )
+
+        self.assertEqual(get_unread_notification_count(user), 1)
+        mark_notification_read(notification)
+        self.assertEqual(get_unread_notification_count(user), 0)
+
+    def test_create_notification_deduplicates_recent_identical_events(self):
+        user = HiveUser.objects.create(
+            username="notice_dedupe",
+            email="notice-dedupe@example.com",
+            password_hash=make_password(self.LOGIN_PASSWORD),
+            status=UserStatus.ACTIVE,
+        )
+
+        first_notification = create_notification(
+            user=user,
+            notification_type=NotificationType.POST_LIKED,
+            title="중복 테스트",
+            body="같은 이벤트",
+            target_type=NotificationTargetType.POST,
+        )
+        second_notification = create_notification(
+            user=user,
+            notification_type=NotificationType.POST_LIKED,
+            title="중복 테스트",
+            body="같은 이벤트",
+            target_type=NotificationTargetType.POST,
+        )
+
+        self.assertIsNotNone(first_notification)
+        self.assertIsNone(second_notification)
+        self.assertEqual(Notification.objects.filter(user=user).count(), 1)
 
     def test_notification_mark_read_htmx_updates_panel_without_redirect(self):
         user = HiveUser.objects.create(

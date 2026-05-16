@@ -1,0 +1,28 @@
+<section id="notifications-panel"
+         class="rounded-[2rem] bg-surface-container-low p-8">
+    <div class="flex flex-wrap items-center justify-end gap-4">
+        {% if notifications %}
+            <form method="post"
+                  action="{% url 'notifications_mark_all_read' %}?page={{ page_obj.number }}"
+                  hx-post="{% url 'notifications_mark_all_read' %}?page={{ page_obj.number }}"
+                  hx-target="#notifications-panel"
+                  hx-swap="outerHTML">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <button type="submit"
+                        class="rounded-2xl bg-primary-container px-4 py-3 text-sm font-bold text-on-primary-container">
+                    모두 읽음 처리
+                </button>
+            </form>
+        {% endif %}
+    </div>
+    {% if notifications %}
+        <div id="notifications-list" class="mt-6 space-y-4">{% include "partials/notifications_page.html" %}</div>
+    {% else %}
+        <p class="mt-6 text-sm leading-7 text-on-surface-variant">표시할 알림이 아직 없습니다.</p>
+    {% endif %}
+</section>
+{% if current_user %}
+    {% include "partials/notification_topbar_link.html" with oob=True %}
+    {% include "partials/notification_sidebar_link.html" with oob=True %}
+{% endif %}

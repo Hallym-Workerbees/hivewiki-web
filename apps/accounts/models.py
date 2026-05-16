@@ -2,6 +2,8 @@ import uuid
 
 from django.db import models
 
+from apps.core.models import PostgresEnumField
+
 
 class OAuthProvider(models.TextChoices):
     GOOGLE = "google", "Google"
@@ -68,3 +70,50 @@ class OAuthAccount(models.Model):
 
     def __str__(self):
         return f"{self.provider}:{self.provider_user_id}"
+
+
+class NotificationType(models.TextChoices):
+    POST_LIKED = "post_liked", "Post liked"
+    COMMENT_LIKED = "comment_liked", "Comment liked"
+    POST_COMMENTED = "post_commented", "Post commented"
+    COMMENT_REPLIED = "comment_replied", "Comment replied"
+
+
+class NotificationTargetType(models.TextChoices):
+    POST = "post", "Post"
+    COMMENT = "comment", "Comment"
+
+
+class Notification(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        HiveUser,
+        on_delete=models.CASCADE,
+        related_name="notifications",
+        db_column="user_id",
+    )
+    notification_type = PostgresEnumField(
+        max_length=40,
+        enum_type="notification_type",
+        choices=NotificationType.choices,
+    )
+    title = models.CharField(max_length=255)
+    body = models.TextField(blank=True, null=True)
+    target_type = PostgresEnumField(
+        max_length=40,
+        enum_type="notification_target_type",
+        choices=NotificationTargetType.choices,
+        blank=True,
+        null=True,
+    )
+    target_id = models.UUIDField(blank=True, null=True)
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    read_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        db_table = "notifications"
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return self.title

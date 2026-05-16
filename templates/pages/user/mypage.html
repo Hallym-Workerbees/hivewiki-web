@@ -28,6 +28,8 @@
                 <div class="mt-8 flex flex-wrap gap-3">
                     <a href="{% url 'profile_edit' %}"
                        class="inline-flex rounded-2xl bg-primary-container px-5 py-3 text-sm font-bold text-on-primary-container">프로필 수정</a>
+                    <a href="{% url 'mypage_notifications' %}"
+                       class="inline-flex rounded-2xl bg-surface-container-high px-5 py-3 text-sm font-semibold text-primary">알림 보기</a>
                     {% if not password_login_disabled %}
                         <a href="{% url 'password_change' %}"
                            class="inline-flex rounded-2xl bg-surface-container-high px-5 py-3 text-sm font-semibold text-primary">비밀번호 변경</a>

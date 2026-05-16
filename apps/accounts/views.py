@@ -4,7 +4,7 @@ from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
 from django.http import Http404, HttpResponse, JsonResponse
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
@@ -22,6 +22,12 @@ from apps.core.models import (
 from .decorators import login_required
 from .forms import LoginForm, PasswordChangeForm, ProfileEditForm, SignUpForm
 from .models import HiveUser, UserStatus
+from .notifications import (
+    attach_notification_targets,
+    get_notifications_for_user,
+    mark_all_notifications_read,
+    mark_notification_read,
+)
 from .services import (
     OAUTH_ACTION_LINK,
     PENDING_OAUTH_CONFIRM_SESSION_KEY,
@@ -58,6 +64,7 @@ from .services import (
 )
 
 PROFILE_ACTIVITY_PAGE_SIZE = 20
+NOTIFICATION_PAGE_SIZE = 20
 
 
 def _get_safe_next_url(request):
@@ -90,6 +97,11 @@ def _annotated_profile_posts(queryset):
 
 def _paginate_profile_items(queryset, *, page_number):
     paginator = Paginator(queryset, PROFILE_ACTIVITY_PAGE_SIZE)
+    return paginator.get_page(page_number)
+
+
+def _paginate_notifications(queryset, *, page_number):
+    paginator = Paginator(queryset, NOTIFICATION_PAGE_SIZE)
     return paginator.get_page(page_number)
 
 
@@ -638,6 +650,93 @@ def mypage_bookmarked_wiki_view(request):
         page_obj=page_obj,
         list_type="bookmarked_wiki",
     )
+
+
+@login_required
+def mypage_notifications_view(request):
+    page_obj = _paginate_notifications(
+        get_notifications_for_user(request.current_user),
+        page_number=request.GET.get("page", "1"),
+    )
+    notifications = attach_notification_targets(page_obj.object_list)
+    next_page_url = (
+        f"{reverse('mypage_notifications')}?page={page_obj.next_page_number()}"
+        if page_obj.has_next()
+        else ""
+    )
+    if request.headers.get("HX-Request") == "true":
+        return render(
+            request,
+            "partials/notifications_page.html",
+            {
+                "notifications": notifications,
+                "next_page_url": next_page_url,
+            },
+        )
+    return render(
+        request,
+        "pages/user/notifications.html",
+        {
+            "page_heading": "Notifications",
+            "notifications": notifications,
+            "page_obj": page_obj,
+            "next_page_url": next_page_url,
+        },
+    )
+
+
+@login_required
+@require_POST
+def notifications_mark_all_read_view(request):
+    mark_all_notifications_read(request.current_user)
+    if request.headers.get("HX-Request") == "true":
+        page_obj = _paginate_notifications(
+            get_notifications_for_user(request.current_user),
+            page_number=request.GET.get("page", "1"),
+        )
+        return render(
+            request,
+            "partials/notifications_panel.html",
+            {
+                "notifications": attach_notification_targets(page_obj.object_list),
+                "page_obj": page_obj,
+                "next_page_url": (
+                    f"{reverse('mypage_notifications')}?page={page_obj.next_page_number()}"
+                    if page_obj.has_next()
+                    else ""
+                ),
+            },
+        )
+    return redirect(request.POST.get("next") or "mypage_notifications")
+
+
+@login_required
+@require_POST
+def notification_mark_read_view(request, notification_id):
+    notification = get_object_or_404(
+        get_notifications_for_user(request.current_user),
+        pk=notification_id,
+    )
+    mark_notification_read(notification)
+    if request.headers.get("HX-Request") == "true":
+        page_obj = _paginate_notifications(
+            get_notifications_for_user(request.current_user),
+            page_number=request.GET.get("page", "1"),
+        )
+        return render(
+            request,
+            "partials/notifications_panel.html",
+            {
+                "notifications": attach_notification_targets(page_obj.object_list),
+                "page_obj": page_obj,
+                "next_page_url": (
+                    f"{reverse('mypage_notifications')}?page={page_obj.next_page_number()}"
+                    if page_obj.has_next()
+                    else ""
+                ),
+            },
+        )
+    return redirect(request.POST.get("next") or "mypage_notifications")
 
 
 @login_required

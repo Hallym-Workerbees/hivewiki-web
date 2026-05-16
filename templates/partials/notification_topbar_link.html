@@ -1,0 +1,21 @@
+<a id="notification-link-topbar"
+   href="{% url 'mypage_notifications' %}"
+   class="relative inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-surface-container-low text-on-surface-variant"
+   {% if oob %}hx-swap-oob="outerHTML"{% endif %}
+   aria-label="알림">
+    <span class="sr-only">알림</span>
+    <svg class="h-5 w-5"
+         viewBox="0 0 24 24"
+         fill="none"
+         stroke="currentColor"
+         stroke-width="1.8"
+         stroke-linecap="round"
+         stroke-linejoin="round"
+         aria-hidden="true">
+        <path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5" />
+        <path d="M10 17a2 2 0 0 0 4 0" />
+    </svg>
+    {% if notification_unread_count %}
+        <span class="absolute -right-1 -top-1 rounded-full bg-primary-container px-2 py-0.5 text-xs font-bold text-on-primary-container">{{ notification_unread_count }}</span>
+    {% endif %}
+</a>

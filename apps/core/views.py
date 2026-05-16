@@ -13,6 +13,11 @@ from django.views.decorators.http import require_POST
 
 from apps.accounts.decorators import admin_required, login_required
 from apps.accounts.models import HiveUser, OAuthAccount, UserRole, UserStatus
+from apps.accounts.notifications import (
+    notify_comment_created,
+    notify_comment_liked,
+    notify_post_liked,
+)
 from apps.accounts.services import purge_user_sessions
 
 from .community_content import extract_linked_wiki_slugs
@@ -340,6 +345,7 @@ def community_post_like_toggle(request, post_id):
         like.delete()
     else:
         PostLike.objects.create(post=post, user=request.current_user)
+        notify_post_liked(actor=request.current_user, post=post)
     post.like_count = PostLike.objects.filter(post=post).count()
     post.is_liked_by_current_user = PostLike.objects.filter(
         post=post,
@@ -404,9 +410,15 @@ def community_comment_create(request, post_id):
             pk=parent_comment_id,
         )
     if comment_form.is_valid():
-        comment_form.save(
+        comment = comment_form.save(
             post=post,
             author_user=request.current_user,
+            parent_comment=parent_comment,
+        )
+        notify_comment_created(
+            actor=request.current_user,
+            post=post,
+            comment=comment,
             parent_comment=parent_comment,
         )
         messages.success(request, "댓글을 등록했습니다.")
@@ -440,6 +452,7 @@ def community_comment_like_toggle(request, post_id, comment_id):
         like.delete()
     else:
         CommentLike.objects.create(comment=comment, user=request.current_user)
+        notify_comment_liked(actor=request.current_user, comment=comment)
     comment.like_count = CommentLike.objects.filter(comment=comment).count()
     comment.is_liked_by_current_user = CommentLike.objects.filter(
         comment=comment,

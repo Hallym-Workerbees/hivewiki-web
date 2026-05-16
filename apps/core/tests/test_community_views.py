@@ -217,6 +217,79 @@ class CommunityViewTests(TestCase):
         comment.refresh_from_db()
         self.assertEqual(comment.content, "수정된 댓글")
 
+    @patch("apps.core.views.notify_post_liked")
+    def test_post_like_creates_notification_on_new_like(self, mock_notify_post_liked):
+        post = Post.objects.create(
+            author_user=self.other_user,
+            content_markdown="좋아요 대상 포스트",
+            status=PostStatus.PUBLISHED,
+        )
+
+        response = self.client.post(f"/community/{post.id}/like/")
+
+        self.assertRedirects(
+            response,
+            f"/community/{post.id}/",
+            fetch_redirect_response=False,
+        )
+        mock_notify_post_liked.assert_called_once_with(actor=self.user, post=post)
+
+    @patch("apps.core.views.notify_comment_created")
+    def test_comment_create_calls_notification_hook(self, mock_notify_comment_created):
+        post = Post.objects.create(
+            author_user=self.other_user,
+            content_markdown="댓글 대상 포스트",
+            status=PostStatus.PUBLISHED,
+        )
+
+        response = self.client.post(
+            f"/community/{post.id}/comments/",
+            {
+                "parent_comment_id": "",
+                "content": "새 댓글",
+            },
+        )
+
+        self.assertRedirects(
+            response,
+            f"/community/{post.id}/#comment-list",
+            fetch_redirect_response=False,
+        )
+        created_comment = Comment.objects.get(post=post, content="새 댓글")
+        mock_notify_comment_created.assert_called_once_with(
+            actor=self.user,
+            post=post,
+            comment=created_comment,
+            parent_comment=None,
+        )
+
+    @patch("apps.core.views.notify_comment_liked")
+    def test_comment_like_creates_notification_on_new_like(
+        self, mock_notify_comment_liked
+    ):
+        post = Post.objects.create(
+            author_user=self.other_user,
+            content_markdown="댓글 좋아요 대상 포스트",
+            status=PostStatus.PUBLISHED,
+        )
+        comment = Comment.objects.create(
+            post=post,
+            author_user=self.other_user,
+            content="좋아요 대상 댓글",
+        )
+
+        response = self.client.post(f"/community/{post.id}/comments/{comment.id}/like/")
+
+        self.assertRedirects(
+            response,
+            f"/community/{post.id}/#comment-{comment.id}",
+            fetch_redirect_response=False,
+        )
+        mock_notify_comment_liked.assert_called_once_with(
+            actor=self.user,
+            comment=comment,
+        )
+
     def test_anonymous_user_can_read_community_but_not_see_drafts_in_feed(self):
         published_post = Post.objects.create(
             author_user=self.user,

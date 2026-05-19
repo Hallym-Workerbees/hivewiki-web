@@ -28,12 +28,15 @@ from .models import (
     Comment,
     CommentLike,
     IngestionJob,
+    IngestionJobStatus,
     Post,
     PostBookmark,
     PostLike,
     PostStatus,
     Source,
     SourceDocument,
+    SourceDocumentFetchStatus,
+    SourceDocumentWikiStatus,
     Tag,
     WikiBookmark,
     WikiDocument,
@@ -46,6 +49,9 @@ logger = logging.getLogger(__name__)
 COMMUNITY_FEED_PAGE_SIZE = 10
 ADMIN_CONTENT_POST_PAGE_SIZE = 6
 ADMIN_CONTENT_WIKI_PAGE_SIZE = 6
+ADMIN_INGESTION_SOURCE_PAGE_SIZE = 6
+ADMIN_INGESTION_DOCUMENT_PAGE_SIZE = 8
+ADMIN_INGESTION_JOB_PAGE_SIZE = 8
 
 ADMIN_USER_ACTIONS = frozenset(
     {
@@ -1496,6 +1502,23 @@ def _build_admin_content_url(request, **updates):
     return f"{request.path}?{query}"
 
 
+def _build_admin_ingestion_querystring(request, **updates):
+    params = request.GET.copy()
+    for key, value in updates.items():
+        if value in ("", None):
+            params.pop(key, None)
+        else:
+            params[key] = value
+    return params.urlencode()
+
+
+def _build_admin_ingestion_url(request, **updates):
+    query = _build_admin_ingestion_querystring(request, **updates)
+    if not query:
+        return request.path
+    return f"{request.path}?{query}"
+
+
 @login_required
 @admin_required
 def admin_console(request):
@@ -1633,6 +1656,17 @@ def admin_ingestion_management(request):
     else:
         source_form = SourceForm()
 
+    source_query = request.GET.get("source_query", "").strip()
+    selected_source_health = request.GET.get("source_health", "").strip()
+    selected_source_enabled = request.GET.get("source_enabled", "").strip()
+    document_query = request.GET.get("document_query", "").strip()
+    selected_document_fetch_status = request.GET.get(
+        "document_fetch_status", ""
+    ).strip()
+    selected_document_wiki_status = request.GET.get("document_wiki_status", "").strip()
+    job_query = request.GET.get("job_query", "").strip()
+    selected_job_status = request.GET.get("job_status", "").strip()
+
     source_queryset = Source.objects.annotate(
         document_count=Count("documents", distinct=True),
         pending_document_count=Count(
@@ -1655,34 +1689,145 @@ def admin_ingestion_management(request):
             filter=Q(documents__ingestion_jobs__status="FAILED"),
             distinct=True,
         ),
-    ).order_by("name")
-    recent_documents = list(
-        SourceDocument.objects.select_related("source").order_by("-collected_at")[:8]
     )
-    recent_jobs = list(
-        IngestionJob.objects.select_related(
-            "source_document", "source_document__source"
-        ).order_by("-queued_at")[:8]
+    if source_query:
+        source_queryset = source_queryset.filter(
+            Q(name__icontains=source_query) | Q(target_url__icontains=source_query)
+        )
+    if selected_source_enabled == "enabled":
+        source_queryset = source_queryset.filter(enabled=True)
+    elif selected_source_enabled == "disabled":
+        source_queryset = source_queryset.filter(enabled=False)
+    if selected_source_health == "healthy":
+        source_queryset = source_queryset.filter(
+            enabled=True,
+            consecutive_failures=0,
+            failed_document_count=0,
+            failed_job_count=0,
+            pending_document_count=0,
+            queued_job_count=0,
+        ).filter(Q(last_error_message__isnull=True) | Q(last_error_message=""))
+    elif selected_source_health == "warning":
+        source_queryset = source_queryset.filter(
+            enabled=True,
+            consecutive_failures=0,
+            failed_document_count=0,
+            failed_job_count=0,
+        ).filter(Q(last_error_message__isnull=True) | Q(last_error_message=""))
+        source_queryset = source_queryset.filter(
+            Q(pending_document_count__gt=0) | Q(queued_job_count__gt=0)
+        )
+    elif selected_source_health == "failing":
+        source_queryset = source_queryset.filter(enabled=True).filter(
+            Q(consecutive_failures__gt=0)
+            | Q(failed_document_count__gt=0)
+            | Q(failed_job_count__gt=0)
+            | (Q(last_error_message__isnull=False) & ~Q(last_error_message=""))
+        )
+    elif selected_source_health == "paused":
+        source_queryset = source_queryset.filter(enabled=False)
+    source_queryset = source_queryset.order_by("name").distinct()
+
+    recent_documents_queryset = SourceDocument.objects.select_related(
+        "source"
+    ).order_by("-collected_at")
+    if document_query:
+        recent_documents_queryset = recent_documents_queryset.filter(
+            Q(title__icontains=document_query)
+            | Q(canonical_url__icontains=document_query)
+            | Q(source__name__icontains=document_query)
+        )
+    if selected_document_fetch_status in {
+        SourceDocumentFetchStatus.PENDING,
+        SourceDocumentFetchStatus.FETCHED,
+        SourceDocumentFetchStatus.FAILED,
+    }:
+        recent_documents_queryset = recent_documents_queryset.filter(
+            fetch_status=selected_document_fetch_status
+        )
+    if selected_document_wiki_status in {
+        SourceDocumentWikiStatus.NOT_REQUESTED,
+        SourceDocumentWikiStatus.REQUESTED,
+        SourceDocumentWikiStatus.COMPLETED,
+        SourceDocumentWikiStatus.FAILED,
+    }:
+        recent_documents_queryset = recent_documents_queryset.filter(
+            wiki_status=selected_document_wiki_status
+        )
+
+    recent_jobs_queryset = IngestionJob.objects.select_related(
+        "source_document", "source_document__source"
+    ).order_by("-queued_at")
+    if job_query:
+        recent_jobs_queryset = recent_jobs_queryset.filter(
+            Q(source_document__title__icontains=job_query)
+            | Q(source_document__canonical_url__icontains=job_query)
+            | Q(source_document__source__name__icontains=job_query)
+            | Q(error_message__icontains=job_query)
+        )
+    if selected_job_status in {
+        IngestionJobStatus.QUEUED,
+        IngestionJobStatus.STARTED,
+        IngestionJobStatus.COMPLETED,
+        IngestionJobStatus.FAILED,
+    }:
+        recent_jobs_queryset = recent_jobs_queryset.filter(status=selected_job_status)
+
+    source_paginator = Paginator(source_queryset, ADMIN_INGESTION_SOURCE_PAGE_SIZE)
+    source_page_obj = source_paginator.get_page(request.GET.get("source_page") or 1)
+    sources = source_page_obj
+    document_paginator = Paginator(
+        recent_documents_queryset, ADMIN_INGESTION_DOCUMENT_PAGE_SIZE
     )
-    sources = list(source_queryset)
+    recent_documents = document_paginator.get_page(
+        request.GET.get("document_page") or 1
+    )
+    job_paginator = Paginator(recent_jobs_queryset, ADMIN_INGESTION_JOB_PAGE_SIZE)
+    recent_jobs = job_paginator.get_page(request.GET.get("job_page") or 1)
+
+    health_count_queryset = Source.objects.annotate(
+        pending_document_count=Count(
+            "documents",
+            filter=Q(documents__fetch_status=SourceDocumentFetchStatus.PENDING),
+            distinct=True,
+        ),
+        failed_document_count=Count(
+            "documents",
+            filter=Q(documents__fetch_status=SourceDocumentFetchStatus.FAILED),
+            distinct=True,
+        ),
+        queued_job_count=Count(
+            "documents__ingestion_jobs",
+            filter=Q(documents__ingestion_jobs__status=IngestionJobStatus.QUEUED),
+            distinct=True,
+        ),
+        failed_job_count=Count(
+            "documents__ingestion_jobs",
+            filter=Q(documents__ingestion_jobs__status=IngestionJobStatus.FAILED),
+            distinct=True,
+        ),
+    )
     healthy_source_count = 0
     paused_source_count = 0
     warning_source_count = 0
     failing_source_count = 0
+    for source in health_count_queryset:
+        health = _classify_source_health(source)
+        if health["status"] == "healthy":
+            healthy_source_count += 1
+        elif health["status"] == "paused":
+            paused_source_count += 1
+        elif health["status"] == "warning":
+            warning_source_count += 1
+        else:
+            failing_source_count += 1
+
     for source in sources:
         health = _classify_source_health(source)
         source.health_status = health["status"]
         source.health_label = health["label"]
         source.health_badge_class = health["badge_class"]
         source.health_panel_class = health["panel_class"]
-        if source.health_status == "healthy":
-            healthy_source_count += 1
-        elif source.health_status == "paused":
-            paused_source_count += 1
-        elif source.health_status == "warning":
-            warning_source_count += 1
-        else:
-            failing_source_count += 1
 
     context = {
         **_build_admin_summary_context(),
@@ -1692,9 +1837,116 @@ def admin_ingestion_management(request):
         "sources": sources,
         "recent_documents": recent_documents,
         "recent_jobs": recent_jobs,
+        "source_query": source_query,
+        "selected_source_health": selected_source_health,
+        "selected_source_enabled": selected_source_enabled,
+        "document_query": document_query,
+        "selected_document_fetch_status": selected_document_fetch_status,
+        "selected_document_wiki_status": selected_document_wiki_status,
+        "job_query": job_query,
+        "selected_job_status": selected_job_status,
+        "source_health_choices": [
+            ("", "전체 상태"),
+            ("healthy", "Healthy"),
+            ("warning", "Warning"),
+            ("failing", "Failing"),
+            ("paused", "Paused"),
+        ],
+        "source_enabled_choices": [
+            ("", "활성/비활성 전체"),
+            ("enabled", "활성만"),
+            ("disabled", "비활성만"),
+        ],
+        "document_fetch_status_choices": [
+            ("", "fetch 전체"),
+            (SourceDocumentFetchStatus.PENDING, "Pending"),
+            (SourceDocumentFetchStatus.FETCHED, "Fetched"),
+            (SourceDocumentFetchStatus.FAILED, "Failed"),
+        ],
+        "document_wiki_status_choices": [
+            ("", "wiki 전체"),
+            (SourceDocumentWikiStatus.NOT_REQUESTED, "Not requested"),
+            (SourceDocumentWikiStatus.REQUESTED, "Requested"),
+            (SourceDocumentWikiStatus.COMPLETED, "Completed"),
+            (SourceDocumentWikiStatus.FAILED, "Failed"),
+        ],
+        "job_status_choices": [
+            ("", "잡 상태 전체"),
+            (IngestionJobStatus.QUEUED, "Queued"),
+            (IngestionJobStatus.STARTED, "Started"),
+            (IngestionJobStatus.COMPLETED, "Completed"),
+            (IngestionJobStatus.FAILED, "Failed"),
+        ],
+        "source_prev_url": (
+            _build_admin_ingestion_url(
+                request,
+                section="sources",
+                source_page=source_page_obj.previous_page_number(),
+            )
+            if source_page_obj.has_previous()
+            else ""
+        ),
+        "source_next_url": (
+            _build_admin_ingestion_url(
+                request,
+                section="sources",
+                source_page=source_page_obj.next_page_number(),
+            )
+            if source_page_obj.has_next()
+            else ""
+        ),
+        "document_prev_url": (
+            _build_admin_ingestion_url(
+                request,
+                section="recent_documents",
+                document_page=recent_documents.previous_page_number(),
+            )
+            if recent_documents.has_previous()
+            else ""
+        ),
+        "document_next_url": (
+            _build_admin_ingestion_url(
+                request,
+                section="recent_documents",
+                document_page=recent_documents.next_page_number(),
+            )
+            if recent_documents.has_next()
+            else ""
+        ),
+        "job_prev_url": (
+            _build_admin_ingestion_url(
+                request,
+                section="recent_jobs",
+                job_page=recent_jobs.previous_page_number(),
+            )
+            if recent_jobs.has_previous()
+            else ""
+        ),
+        "job_next_url": (
+            _build_admin_ingestion_url(
+                request,
+                section="recent_jobs",
+                job_page=recent_jobs.next_page_number(),
+            )
+            if recent_jobs.has_next()
+            else ""
+        ),
+        "sources_refresh_query": _build_admin_ingestion_querystring(
+            request, section="sources"
+        ),
+        "documents_refresh_query": _build_admin_ingestion_querystring(
+            request, section="recent_documents"
+        ),
+        "jobs_refresh_query": _build_admin_ingestion_querystring(
+            request, section="recent_jobs"
+        ),
         "document_count": SourceDocument.objects.count(),
-        "queued_job_count": IngestionJob.objects.filter(status="QUEUED").count(),
-        "failed_job_count": IngestionJob.objects.filter(status="FAILED").count(),
+        "queued_job_count": IngestionJob.objects.filter(
+            status=IngestionJobStatus.QUEUED
+        ).count(),
+        "failed_job_count": IngestionJob.objects.filter(
+            status=IngestionJobStatus.FAILED
+        ).count(),
         "healthy_source_count": healthy_source_count,
         "paused_source_count": paused_source_count,
         "warning_source_count": warning_source_count,

@@ -17,6 +17,9 @@ env = environ.Env(
     DJANGO_SECURE_CONTENT_TYPE_NOSNIFF=(bool, True),
     DJANGO_X_FRAME_OPTIONS=("str", "DENY"),
     DJANGO_LOG_LEVEL=("str", "INFO"),
+    POSTGRES_CONNECT_TIMEOUT=(int, 1),
+    REDIS_SOCKET_CONNECT_TIMEOUT=(float, 1.0),
+    REDIS_SOCKET_TIMEOUT=(float, 1.0),
     LOGIN_RATE_LIMIT_ATTEMPTS=(int, 5),
     LOGIN_RATE_LIMIT_WINDOW_SECONDS=(int, 600),
 )
@@ -106,6 +109,9 @@ DATABASES = {
         "PASSWORD": env("POSTGRES_PASSWORD"),
         "HOST": env("POSTGRES_HOST"),
         "PORT": env("POSTGRES_PORT"),
+        "OPTIONS": {
+            "connect_timeout": env("POSTGRES_CONNECT_TIMEOUT"),
+        },
     }
 }
 
@@ -115,6 +121,8 @@ CACHES = {
         "LOCATION": env("REDIS_URL"),
         "OPTIONS": {
             "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "SOCKET_CONNECT_TIMEOUT": env("REDIS_SOCKET_CONNECT_TIMEOUT"),
+            "SOCKET_TIMEOUT": env("REDIS_SOCKET_TIMEOUT"),
         },
         "KEY_PREFIX": "",
     }

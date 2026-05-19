@@ -196,7 +196,10 @@ OAuth callback URL은 현재 요청의 host/scheme를 기준으로 서버에서 
 - `POSTGRES_PASSWORD`: PostgreSQL 비밀번호
 - `POSTGRES_HOST`: PostgreSQL 호스트
 - `POSTGRES_PORT`: PostgreSQL 포트
+- `POSTGRES_CONNECT_TIMEOUT`: PostgreSQL 연결 timeout. 초 단위, 기본 `1`
 - `REDIS_URL`: Valkey/Redis URL. 세션 및 캐시에 사용
+- `REDIS_SOCKET_CONNECT_TIMEOUT`: Valkey/Redis 연결 timeout. 초 단위, 기본 `1.0`
+- `REDIS_SOCKET_TIMEOUT`: Valkey/Redis 읽기/쓰기 timeout. 초 단위, 기본 `1.0`
 
 ## 운영 엔드포인트
 

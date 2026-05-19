@@ -24,6 +24,14 @@ from apps.core.models import Source, Tag, TagType
             "LOCATION": "hivewiki-core-test-cache",
         }
     },
+    STORAGES={
+        "default": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+        },
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        },
+    },
 )
 class AdminConsoleTests(TestCase):
     def _login(self, user):
@@ -443,7 +451,36 @@ class AdminConsoleTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'data-local-datetime-input="true"')
+        self.assertContains(response, 'step="60"')
         self.assertContains(response, "data-local-datetime-source=")
+        self.assertContains(response, "2026-05-02T01:30+00:00")
+
+    def test_admin_console_truncates_seconds_in_next_poll_at_input(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        source = Source.objects.create(
+            name="초 단위 테스트 소스",
+            target_url="https://example.com/timezone-seconds",
+            enabled=True,
+            poll_interval_minutes=30,
+            next_poll_at=datetime(2026, 5, 2, 1, 30, 2, tzinfo=UTC),
+            updated_at=timezone.now(),
+        )
+        self._login(admin_user)
+
+        response = self.client.get(
+            f"/dashboard/admin/sources/{source.id}/edit/",
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "2026-05-02T01:30+00:00")
+        self.assertNotContains(response, "2026-05-02T01:30:02+00:00")
 
     def test_admin_can_change_existing_tag_type(self):
         admin_user = HiveUser.objects.create(

@@ -129,6 +129,7 @@ class SourceForm(forms.ModelForm):
         self.fields["next_poll_at"].widget.attrs.update(
             {
                 "class": FORM_INPUT_CLASS,
+                "step": 60,
                 "data-local-datetime-input": "true",
             }
         )
@@ -139,20 +140,19 @@ class SourceForm(forms.ModelForm):
         )
 
         if self.instance.pk and self.instance.next_poll_at:
-            initial_value = timezone.localtime(self.instance.next_poll_at).strftime(
-                "%Y-%m-%dT%H:%M"
-            )
+            next_poll_at = _truncate_to_minute(self.instance.next_poll_at)
+            initial_value = timezone.localtime(next_poll_at).strftime("%Y-%m-%dT%H:%M")
             self.initial.setdefault("next_poll_at", initial_value)
             self.fields["next_poll_at"].widget.attrs["data-local-datetime-source"] = (
-                self.instance.next_poll_at.astimezone(UTC).isoformat()
+                next_poll_at.astimezone(UTC).isoformat(timespec="minutes")
             )
         elif not self.is_bound and not self.initial.get("next_poll_at"):
-            current_time = timezone.now()
+            current_time = _truncate_to_minute(timezone.now())
             self.initial["next_poll_at"] = timezone.localtime(current_time).strftime(
                 "%Y-%m-%dT%H:%M"
             )
             self.fields["next_poll_at"].widget.attrs["data-local-datetime-source"] = (
-                current_time.astimezone(UTC).isoformat()
+                current_time.astimezone(UTC).isoformat(timespec="minutes")
             )
 
     def clean_name(self):
@@ -166,6 +166,10 @@ class SourceForm(forms.ModelForm):
 
     def clean_target_url(self):
         return self.cleaned_data["target_url"].strip()
+
+
+def _truncate_to_minute(value):
+    return value.replace(second=0, microsecond=0)
 
 
 class PostForm(forms.Form):

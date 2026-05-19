@@ -1,0 +1,7 @@
+<section id="admin-tags-stats"
+         class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    {% include "partials/stat_tile.html" with label="전체 태그" value=tag_count description="커뮤니티에서 사용 가능한 전체 태그 수" %}
+    {% include "partials/stat_tile.html" with label="SYSTEM" value=system_tag_count description="시스템 추천 우선순위에 쓰이는 태그 수" %}
+    {% include "partials/stat_tile.html" with label="USER" value=user_tag_count description="사용자 기원 태그 수" %}
+    {% include "partials/stat_tile.html" with label="소스" value=source_count description="운영과 연결된 데이터 소스 수" %}
+</section>

@@ -1,0 +1,26 @@
+<div id="admin-ingestion-create"
+     class="space-y-6 rounded-[2rem] bg-surface-container-low p-6 shadow-ambient lg:p-8">
+    {% include "partials/section_header.html" with eyebrow="Crawler Sources" title="소스 등록" description="새 수집 소스를 추가하고 폴링 주기와 다음 시각을 설정합니다." refresh_url=request.path refresh_section="source_form" refresh_target="#admin-ingestion-create" %}
+    <form method="post" class="space-y-5 rounded-[1.75rem] bg-white p-6">
+        {% csrf_token %}
+        {% include "partials/form_errors.html" with form=source_form %}
+        {% for field in source_form %}
+            {% if field.name == "enabled" %}
+                <label class="flex items-center gap-3 rounded-2xl bg-surface-container-low px-4 py-3">
+                    {{ field }}
+                    <span>
+                        <span class="block text-sm font-semibold">{{ field.label }}</span>
+                        <span class="block text-xs text-stone-500">비활성화하면 크롤러가 이 소스를 건너뜁니다.</span>
+                    </span>
+                </label>
+                {% for error in field.errors %}<p class="text-sm text-red-700">{{ error }}</p>{% endfor %}
+            {% else %}
+                {% include "partials/auth_field.html" %}
+            {% endif %}
+        {% endfor %}
+        <button type="submit"
+                class="w-full rounded-2xl bg-primary-container px-4 py-3 text-sm font-bold text-on-primary-container">
+            소스 추가
+        </button>
+    </form>
+</div>

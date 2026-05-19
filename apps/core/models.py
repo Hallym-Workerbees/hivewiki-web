@@ -500,6 +500,12 @@ class IngestionJob(models.Model):
 
     class Meta:
         db_table = "ingestion_jobs"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source_document"],
+                name="ingestion_jobs_source_document_id_key",
+            )
+        ]
 
 
 class SourceChunk(models.Model):

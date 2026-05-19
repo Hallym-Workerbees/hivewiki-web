@@ -44,6 +44,8 @@ from .wiki_markdown import strip_leading_title_heading
 
 logger = logging.getLogger(__name__)
 COMMUNITY_FEED_PAGE_SIZE = 10
+ADMIN_CONTENT_POST_PAGE_SIZE = 6
+ADMIN_CONTENT_WIKI_PAGE_SIZE = 6
 
 ADMIN_USER_ACTIONS = frozenset(
     {
@@ -54,6 +56,8 @@ ADMIN_USER_ACTIONS = frozenset(
         "delete",
     }
 )
+ADMIN_POST_ACTIONS = frozenset({"delete", "restore"})
+ADMIN_WIKI_ACTIONS = frozenset({"publish", "archive", "delete"})
 
 LIST_TAGS = ["지식", "협업", "캠퍼스"]
 
@@ -1475,16 +1479,41 @@ def _build_community_list_url(
     return f"{base_url}?{urlencode(params)}"
 
 
+def _build_admin_content_querystring(request, **updates):
+    params = request.GET.copy()
+    for key, value in updates.items():
+        if value in ("", None):
+            params.pop(key, None)
+        else:
+            params[key] = value
+    return params.urlencode()
+
+
+def _build_admin_content_url(request, **updates):
+    query = _build_admin_content_querystring(request, **updates)
+    if not query:
+        return request.path
+    return f"{request.path}?{query}"
+
+
 @login_required
 @admin_required
 def admin_console(request):
-    return render(
+    context = {
+        **_build_admin_summary_context(),
+        "page_heading": "Admin Dashboard",
+        "admin_section": "dashboard",
+        "admin_intro_template": "partials/admin/dashboard_hero.html",
+        "admin_content_template": "partials/admin/page_content/dashboard.html",
+    }
+    return _render_admin_page(
         request,
         "pages/admin/dashboard.html",
+        context,
         {
-            **_build_admin_summary_context(),
-            "page_heading": "Admin Dashboard",
-            "admin_section": "dashboard",
+            "summary": "partials/admin/dashboard_summary_stats.html",
+            "overview": "partials/admin/dashboard_overview_panel.html",
+            "signals": "partials/admin/dashboard_signals_panel.html",
         },
     )
 
@@ -1502,26 +1531,33 @@ def admin_user_management(request):
     )
     users = [user for user in all_users if user.status != UserStatus.DELETED]
     deleted_users = [user for user in all_users if user.status == UserStatus.DELETED]
-    return render(
+    context = {
+        **_build_admin_summary_context(),
+        "page_heading": "User Management",
+        "admin_section": "users",
+        "users": users,
+        "deleted_users": deleted_users,
+        "admin_user_count": sum(1 for user in users if user.role == UserRole.ADMIN),
+        "active_user_count": sum(
+            1 for user in users if user.status == UserStatus.ACTIVE
+        ),
+        "oauth_connected_user_count": sum(
+            1 for user in users if user.oauth_accounts.all()
+        ),
+        "suspended_user_count": sum(
+            1 for user in users if user.status == UserStatus.SUSPENDED
+        ),
+        "deleted_user_count": len(deleted_users),
+        "admin_content_template": "partials/admin/page_content/users.html",
+    }
+    return _render_admin_page(
         request,
         "pages/admin/users.html",
+        context,
         {
-            **_build_admin_summary_context(),
-            "page_heading": "User Management",
-            "admin_section": "users",
-            "users": users,
-            "deleted_users": deleted_users,
-            "admin_user_count": sum(1 for user in users if user.role == UserRole.ADMIN),
-            "active_user_count": sum(
-                1 for user in users if user.status == UserStatus.ACTIVE
-            ),
-            "oauth_connected_user_count": sum(
-                1 for user in users if user.oauth_accounts.all()
-            ),
-            "suspended_user_count": sum(
-                1 for user in users if user.status == UserStatus.SUSPENDED
-            ),
-            "deleted_user_count": len(deleted_users),
+            "summary": "partials/admin/users_summary_stats.html",
+            "users_list": "partials/admin/users_active_list.html",
+            "deleted_users": "partials/admin/users_deleted_list.html",
         },
     )
 
@@ -1561,17 +1597,24 @@ def admin_tag_management(request):
     else:
         tag_form = TagForm()
 
-    return render(
+    context = {
+        **_build_admin_summary_context(),
+        "page_heading": "Tag Management",
+        "admin_section": "tags",
+        "tag_form": tag_form,
+        "tags": list(Tag.objects.all()),
+        "system_tag_count": Tag.objects.filter(tag_type="system").count(),
+        "user_tag_count": Tag.objects.filter(tag_type="user").count(),
+        "admin_content_template": "partials/admin/page_content/tags.html",
+    }
+    return _render_admin_page(
         request,
         "pages/admin/tags.html",
+        context,
         {
-            **_build_admin_summary_context(),
-            "page_heading": "Tag Management",
-            "admin_section": "tags",
-            "tag_form": tag_form,
-            "tags": list(Tag.objects.all()),
-            "system_tag_count": Tag.objects.filter(tag_type="system").count(),
-            "user_tag_count": Tag.objects.filter(tag_type="user").count(),
+            "summary": "partials/admin/tags_summary_stats.html",
+            "tag_form": "partials/admin/tags_create_panel.html",
+            "tag_list": "partials/admin/tags_list_panel.html",
         },
     )
 
@@ -1641,24 +1684,33 @@ def admin_ingestion_management(request):
         else:
             failing_source_count += 1
 
-    return render(
+    context = {
+        **_build_admin_summary_context(),
+        "page_heading": "Ingestion Management",
+        "admin_section": "ingestion",
+        "source_form": source_form,
+        "sources": sources,
+        "recent_documents": recent_documents,
+        "recent_jobs": recent_jobs,
+        "document_count": SourceDocument.objects.count(),
+        "queued_job_count": IngestionJob.objects.filter(status="QUEUED").count(),
+        "failed_job_count": IngestionJob.objects.filter(status="FAILED").count(),
+        "healthy_source_count": healthy_source_count,
+        "paused_source_count": paused_source_count,
+        "warning_source_count": warning_source_count,
+        "failing_source_count": failing_source_count,
+        "admin_content_template": "partials/admin/page_content/ingestion.html",
+    }
+    return _render_admin_page(
         request,
         "pages/admin/ingestion.html",
+        context,
         {
-            **_build_admin_summary_context(),
-            "page_heading": "Ingestion Management",
-            "admin_section": "ingestion",
-            "source_form": source_form,
-            "sources": sources,
-            "recent_documents": recent_documents,
-            "recent_jobs": recent_jobs,
-            "document_count": SourceDocument.objects.count(),
-            "queued_job_count": IngestionJob.objects.filter(status="QUEUED").count(),
-            "failed_job_count": IngestionJob.objects.filter(status="FAILED").count(),
-            "healthy_source_count": healthy_source_count,
-            "paused_source_count": paused_source_count,
-            "warning_source_count": warning_source_count,
-            "failing_source_count": failing_source_count,
+            "summary": "partials/admin/ingestion_summary_stats.html",
+            "source_form": "partials/admin/ingestion_create_panel.html",
+            "sources": "partials/admin/ingestion_sources_panel.html",
+            "recent_documents": "partials/admin/ingestion_documents_panel.html",
+            "recent_jobs": "partials/admin/ingestion_jobs_panel.html",
         },
     )
 
@@ -1666,15 +1718,214 @@ def admin_ingestion_management(request):
 @login_required
 @admin_required
 def admin_content_management(request):
-    return render(
+    post_query = request.GET.get("post_query", "").strip()
+    selected_post_tag = request.GET.get("post_tag", "").strip()
+    post_visibility = request.GET.get("post_visibility", "active").strip()
+    if post_visibility not in {"active", "deleted", "all"}:
+        post_visibility = "active"
+    wiki_query = request.GET.get("wiki_query", "").strip()
+    selected_wiki_status = request.GET.get("wiki_status", "").strip()
+
+    posts_queryset = (
+        Post.objects.filter(status=PostStatus.PUBLISHED)
+        .select_related("author_user")
+        .prefetch_related("tags")
+        .annotate(
+            comment_count=Count(
+                "comments",
+                filter=Q(comments__deleted_at__isnull=True),
+                distinct=True,
+            ),
+            linked_wiki_count=Count("wiki_documents", distinct=True),
+            visibility_rank=Case(
+                When(deleted_at__isnull=True, then=Value(0)),
+                default=Value(1),
+                output_field=IntegerField(),
+            ),
+        )
+        .order_by("visibility_rank", "-updated_at", "-id")
+    )
+    if post_query:
+        posts_queryset = posts_queryset.filter(
+            Q(title_cache__icontains=post_query)
+            | Q(summary_cache__icontains=post_query)
+            | Q(body_markdown_cache__icontains=post_query)
+            | Q(author_user__username__icontains=post_query)
+        )
+    if selected_post_tag:
+        posts_queryset = posts_queryset.filter(tags__slug=selected_post_tag)
+    if post_visibility == "active":
+        posts_queryset = posts_queryset.filter(deleted_at__isnull=True)
+    elif post_visibility == "deleted":
+        posts_queryset = posts_queryset.filter(deleted_at__isnull=False)
+
+    post_filter_tags = list(
+        Tag.objects.filter(posts__status=PostStatus.PUBLISHED)
+        .annotate(
+            admin_post_count=Count(
+                "posts",
+                filter=Q(posts__status=PostStatus.PUBLISHED),
+                distinct=True,
+            )
+        )
+        .order_by("-admin_post_count", "name")
+        .distinct()
+    )
+    post_paginator = Paginator(posts_queryset.distinct(), ADMIN_CONTENT_POST_PAGE_SIZE)
+    recent_posts = post_paginator.get_page(request.GET.get("post_page") or 1)
+
+    wiki_queryset = (
+        WikiDocument.objects.select_related("current_revision")
+        .annotate(
+            community_post_count=Count(
+                "community_posts",
+                filter=Q(community_posts__deleted_at__isnull=True),
+                distinct=True,
+            ),
+            revision_count=Count("revisions", distinct=True),
+        )
+        .order_by("-updated_at", "title")
+    )
+    if wiki_query:
+        wiki_queryset = wiki_queryset.filter(
+            Q(title__icontains=wiki_query)
+            | Q(summary__icontains=wiki_query)
+            | Q(slug__icontains=wiki_query)
+        )
+    if selected_wiki_status in {
+        WikiDocumentStatus.PUBLISHED,
+        WikiDocumentStatus.ARCHIVED,
+        WikiDocumentStatus.DELETED,
+    }:
+        wiki_queryset = wiki_queryset.filter(status=selected_wiki_status)
+    wiki_paginator = Paginator(wiki_queryset.distinct(), ADMIN_CONTENT_WIKI_PAGE_SIZE)
+    recent_wiki_documents = wiki_paginator.get_page(request.GET.get("wiki_page") or 1)
+
+    context = {
+        **_build_admin_summary_context(),
+        "page_heading": "Content Management",
+        "admin_section": "content",
+        "recent_posts": recent_posts,
+        "recent_wiki_documents": recent_wiki_documents,
+        "post_query": post_query,
+        "selected_post_tag": selected_post_tag,
+        "post_visibility": post_visibility,
+        "post_filter_tags": post_filter_tags,
+        "wiki_query": wiki_query,
+        "selected_wiki_status": selected_wiki_status,
+        "wiki_status_choices": [
+            ("", "전체 상태"),
+            (WikiDocumentStatus.PUBLISHED, "게시"),
+            (WikiDocumentStatus.ARCHIVED, "아카이브"),
+            (WikiDocumentStatus.DELETED, "삭제"),
+        ],
+        "post_prev_url": (
+            _build_admin_content_url(
+                request,
+                section="posts",
+                post_page=recent_posts.previous_page_number(),
+            )
+            if recent_posts.has_previous()
+            else ""
+        ),
+        "post_next_url": (
+            _build_admin_content_url(
+                request,
+                section="posts",
+                post_page=recent_posts.next_page_number(),
+            )
+            if recent_posts.has_next()
+            else ""
+        ),
+        "wiki_prev_url": (
+            _build_admin_content_url(
+                request,
+                section="wiki_documents",
+                wiki_page=recent_wiki_documents.previous_page_number(),
+            )
+            if recent_wiki_documents.has_previous()
+            else ""
+        ),
+        "wiki_next_url": (
+            _build_admin_content_url(
+                request,
+                section="wiki_documents",
+                wiki_page=recent_wiki_documents.next_page_number(),
+            )
+            if recent_wiki_documents.has_next()
+            else ""
+        ),
+        "post_refresh_query": _build_admin_content_querystring(
+            request, section="posts"
+        ),
+        "wiki_refresh_query": _build_admin_content_querystring(
+            request,
+            section="wiki_documents",
+        ),
+        "visible_post_count": Post.objects.filter(
+            deleted_at__isnull=True,
+            status=PostStatus.PUBLISHED,
+        ).count(),
+        "deleted_post_count": Post.objects.filter(deleted_at__isnull=False).count(),
+        "published_wiki_count": WikiDocument.objects.filter(
+            status=WikiDocumentStatus.PUBLISHED
+        ).count(),
+        "archived_wiki_count": WikiDocument.objects.filter(
+            status=WikiDocumentStatus.ARCHIVED
+        ).count(),
+        "deleted_wiki_count": WikiDocument.objects.filter(
+            status=WikiDocumentStatus.DELETED
+        ).count(),
+        "admin_content_template": "partials/admin/page_content/content.html",
+    }
+    return _render_admin_page(
         request,
         "pages/admin/content.html",
+        context,
         {
-            **_build_admin_summary_context(),
-            "page_heading": "Content Management",
-            "admin_section": "content",
+            "summary": "partials/admin/content_summary_stats.html",
+            "posts": "partials/admin/content_posts_panel.html",
+            "wiki_documents": "partials/admin/content_wiki_panel.html",
         },
     )
+
+
+@login_required
+@admin_required
+@require_POST
+def admin_post_action(request, post_id):
+    post = get_object_or_404(Post, pk=post_id)
+    action = request.POST.get("action", "").strip()
+
+    try:
+        if action not in ADMIN_POST_ACTIONS:
+            raise ValueError("지원하지 않는 게시글 액션입니다.")
+        message = _apply_admin_post_action(post=post, action=action)
+    except ValueError as exc:
+        messages.error(request, str(exc))
+    else:
+        messages.success(request, message)
+
+    return redirect("admin_content_management")
+
+
+@login_required
+@admin_required
+@require_POST
+def admin_wiki_action(request, wiki_id):
+    wiki_document = get_object_or_404(WikiDocument, pk=wiki_id)
+    action = request.POST.get("action", "").strip()
+
+    try:
+        if action not in ADMIN_WIKI_ACTIONS:
+            raise ValueError("지원하지 않는 위키 액션입니다.")
+        message = _apply_admin_wiki_action(wiki_document=wiki_document, action=action)
+    except ValueError as exc:
+        messages.error(request, str(exc))
+    else:
+        messages.success(request, message)
+
+    return redirect("admin_content_management")
 
 
 @login_required
@@ -1743,6 +1994,8 @@ def _build_admin_summary_context():
         "failing_source_count": source_counts["failing_source_count"],
         "document_count": SourceDocument.objects.count(),
         "job_count": IngestionJob.objects.count(),
+        "post_count": Post.objects.count(),
+        "wiki_document_count": WikiDocument.objects.count(),
         "search_target": "#admin-search-results",
     }
 
@@ -1751,6 +2004,16 @@ def _htmx_refresh_response():
     response = HttpResponse(status=204)
     response["HX-Refresh"] = "true"
     return response
+
+
+def _render_admin_page(request, template_name, context, partial_templates):
+    if request.headers.get("HX-Request") == "true":
+        section = request.GET.get("section", "").strip()
+        partial_template = partial_templates.get(section)
+        if partial_template:
+            return render(request, partial_template, context)
+        return render(request, "partials/admin/page_shell.html", context)
+    return render(request, template_name, context)
 
 
 def _classify_source_health(source):
@@ -1863,6 +2126,52 @@ def _apply_admin_user_action(*, actor, target_user, action: str) -> str:
         original_email,
     )
     return f"{original_username} 사용자를 제거했습니다."
+
+
+def _apply_admin_post_action(*, post, action: str) -> str:
+    post_label = post.title or post.summary or str(post.pk)
+
+    if action == "delete":
+        if post.deleted_at is not None:
+            raise ValueError("이미 삭제 처리된 게시글입니다.")
+        post.deleted_at = timezone.now()
+        post.updated_at = timezone.now()
+        post.save(update_fields=["deleted_at", "updated_at"])
+        return f"게시글 '{post_label}'을 삭제 처리했습니다."
+
+    if post.deleted_at is None:
+        raise ValueError("복구할 삭제 게시글이 아닙니다.")
+    post.deleted_at = None
+    post.updated_at = timezone.now()
+    post.save(update_fields=["deleted_at", "updated_at"])
+    return f"게시글 '{post_label}'을 복구했습니다."
+
+
+def _apply_admin_wiki_action(*, wiki_document, action: str) -> str:
+    if action == "publish":
+        if wiki_document.status == WikiDocumentStatus.PUBLISHED:
+            raise ValueError("이미 게시 중인 위키 문서입니다.")
+        if wiki_document.current_revision_id is None:
+            raise ValueError("현재 리비전이 없는 위키 문서는 게시할 수 없습니다.")
+        wiki_document.status = WikiDocumentStatus.PUBLISHED
+        wiki_document.updated_at = timezone.now()
+        wiki_document.save(update_fields=["status", "updated_at"])
+        return f"위키 '{wiki_document.title}'를 게시 상태로 전환했습니다."
+
+    if action == "archive":
+        if wiki_document.status == WikiDocumentStatus.ARCHIVED:
+            raise ValueError("이미 아카이브된 위키 문서입니다.")
+        wiki_document.status = WikiDocumentStatus.ARCHIVED
+        wiki_document.updated_at = timezone.now()
+        wiki_document.save(update_fields=["status", "updated_at"])
+        return f"위키 '{wiki_document.title}'를 아카이브했습니다."
+
+    if wiki_document.status == WikiDocumentStatus.DELETED:
+        raise ValueError("이미 삭제된 위키 문서입니다.")
+    wiki_document.status = WikiDocumentStatus.DELETED
+    wiki_document.updated_at = timezone.now()
+    wiki_document.save(update_fields=["status", "updated_at"])
+    return f"위키 '{wiki_document.title}'를 삭제 상태로 전환했습니다."
 
 
 def _deleted_username_value(user) -> str:

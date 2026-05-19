@@ -3,57 +3,5 @@
     HiveWiki | Tag Management
 {% endblock title %}
 {% block app_content %}
-    <section class="mx-auto max-w-7xl space-y-8">
-        {% include "partials/admin/subnav.html" %}
-        <section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {% include "partials/stat_tile.html" with label="전체 태그" value=tag_count description="커뮤니티에서 사용 가능한 전체 태그 수" %}
-            {% include "partials/stat_tile.html" with label="SYSTEM" value=system_tag_count description="시스템 추천 우선순위에 쓰이는 태그 수" %}
-            {% include "partials/stat_tile.html" with label="USER" value=user_tag_count description="사용자 기원 태그 수" %}
-            {% include "partials/stat_tile.html" with label="소스" value=source_count description="운영과 연결된 데이터 소스 수" %}
-        </section>
-        <section class="grid gap-6 xl:grid-cols-2">
-            <div class="space-y-6 rounded-[2rem] bg-surface-container-low p-6 shadow-ambient lg:p-8">
-                {% include "partials/section_header.html" with eyebrow="Tag Registry" title="태그 생성" description="새 태그는 기본적으로 시스템 태그로 시작합니다." %}
-                <form method="post" class="space-y-5 rounded-[1.75rem] bg-white p-6">
-                    {% csrf_token %}
-                    {% include "partials/form_errors.html" with form=tag_form %}
-                    {% for field in tag_form %}
-                        {% include "partials/auth_field.html" %}
-                    {% endfor %}
-                    <button type="submit"
-                            class="w-full rounded-2xl bg-primary-container px-4 py-3 text-sm font-bold text-on-primary-container">
-                        태그 추가
-                    </button>
-                </form>
-            </div>
-            <div class="space-y-6 rounded-[2rem] bg-surface-container-low p-6 shadow-ambient lg:p-8">
-                {% include "partials/section_header.html" with eyebrow="Tag List" title="태그 목록" description="기존 태그는 모달에서 수정하고, 필요하면 USER와 SYSTEM 사이를 전환합니다." %}
-                <div class="space-y-3">
-                    {% for tag in tags %}
-                        <div class="flex items-center justify-between gap-4 rounded-[1.5rem] bg-white px-5 py-4 transition hover:-translate-y-0.5 hover:shadow-ambient">
-                            <div>
-                                <div class="font-semibold text-on-surface">{{ tag.name }}</div>
-                                <div class="mt-1 text-xs uppercase tracking-[0.18em] text-stone-400">{{ tag.slug }}</div>
-                            </div>
-                            <div class="flex items-center gap-3">
-                                <div class="rounded-full bg-secondary-container px-3 py-1 text-xs font-semibold text-on-secondary-container">
-                                    {{ tag.get_tag_type_display }}
-                                </div>
-                                <button type="button"
-                                        hx-get="{% url 'admin_tag_edit_modal' tag.id %}"
-                                        hx-target="#admin-modal-root"
-                                        hx-swap="innerHTML"
-                                        class="rounded-2xl bg-surface-container-low px-4 py-2 text-sm font-semibold text-primary">
-                                    수정
-                                </button>
-                            </div>
-                        </div>
-                    {% empty %}
-                        <div class="rounded-[1.5rem] bg-white px-5 py-8 text-sm text-on-surface-variant">등록된 태그가 없습니다.</div>
-                    {% endfor %}
-                </div>
-            </div>
-        </section>
-        <div id="admin-modal-root"></div>
-    </section>
+    {% include "partials/admin/page_shell.html" %}
 {% endblock app_content %}

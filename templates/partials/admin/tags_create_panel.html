@@ -1,0 +1,15 @@
+<div id="admin-tags-create"
+     class="space-y-6 rounded-[2rem] bg-surface-container-low p-6 shadow-ambient lg:p-8">
+    {% include "partials/section_header.html" with eyebrow="Tag Registry" title="태그 생성" description="새 태그는 기본적으로 시스템 태그로 시작합니다." refresh_url=request.path refresh_section="tag_form" refresh_target="#admin-tags-create" %}
+    <form method="post" class="space-y-5 rounded-[1.75rem] bg-white p-6">
+        {% csrf_token %}
+        {% include "partials/form_errors.html" with form=tag_form %}
+        {% for field in tag_form %}
+            {% include "partials/auth_field.html" %}
+        {% endfor %}
+        <button type="submit"
+                class="w-full rounded-2xl bg-primary-container px-4 py-3 text-sm font-bold text-on-primary-container">
+            태그 추가
+        </button>
+    </form>
+</div>

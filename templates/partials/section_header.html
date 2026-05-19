@@ -1,5 +1,5 @@
-<div class="flex items-end justify-between gap-4">
-    <div>
+<div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div class="min-w-0">
         {% if eyebrow %}
             <div class="text-xs font-semibold uppercase tracking-[0.24em] text-stone-400">{{ eyebrow }}</div>
         {% endif %}
@@ -8,7 +8,31 @@
             <p class="mt-3 max-w-2xl text-sm leading-7 text-on-surface-variant">{{ description }}</p>
         {% endif %}
     </div>
-    {% if href and link_text %}
-        <a href="{{ href }}" class="text-sm font-semibold text-primary">{{ link_text }}</a>
-    {% endif %}
+    <div class="flex shrink-0 items-center gap-3 self-start">
+        {% if refresh_url and refresh_section and refresh_target %}
+            <button type="button"
+                    hx-get="{{ refresh_url }}{% if refresh_query %}?{{ refresh_query }}&{% else %}?section={{ refresh_section }}{% endif %}{% if refresh_query %}section={{ refresh_section }}{% endif %}"
+                    hx-target="{{ refresh_target }}"
+                    hx-swap="outerHTML"
+                    aria-label="섹션 새로고침"
+                    title="새로고침"
+                    class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-surface-container-high text-on-surface-variant transition hover:bg-surface-container-highest">
+                <span class="sr-only">새로고침</span>
+                <svg class="h-5 w-5"
+                     viewBox="0 0 24 24"
+                     fill="none"
+                     stroke="currentColor"
+                     stroke-width="2"
+                     stroke-linecap="round"
+                     stroke-linejoin="round"
+                     aria-hidden="true">
+                    <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+                    <path d="M21 3v6h-6" />
+                </svg>
+            </button>
+        {% endif %}
+        {% if href and link_text %}
+            <a href="{{ href }}" class="text-sm font-semibold text-primary">{{ link_text }}</a>
+        {% endif %}
+    </div>
 </div>

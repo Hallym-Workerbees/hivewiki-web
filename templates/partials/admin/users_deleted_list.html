@@ -1,0 +1,30 @@
+<section id="admin-users-deleted"
+         class="space-y-5 rounded-[2rem] bg-surface-container-low p-6 shadow-ambient lg:p-8">
+    {% include "partials/section_header.html" with eyebrow="Removed" title="삭제된 계정" description="식별자는 정리되었고 운영 기록만 남아 있는 계정입니다." refresh_url=request.path refresh_section="deleted_users" refresh_target="#admin-users-deleted" %}
+    <div class="space-y-3">
+        {% for user in deleted_users %}
+            <article class="grid gap-4 rounded-[1.5rem] bg-white px-5 py-5 lg:grid-cols-[1.2fr_0.9fr_0.8fr_1fr]">
+                <div>
+                    <div class="font-semibold text-on-surface">{{ user.username }}</div>
+                    <div class="mt-1 text-sm text-on-surface-variant">{{ user.email }}</div>
+                </div>
+                <div>
+                    <div class="text-xs uppercase tracking-[0.18em] text-stone-400">가입일</div>
+                    <div class="mt-1 text-sm font-semibold text-on-surface timezone-sensitive"
+                         data-local-datetime="{{ user.created_at|date:'c' }}"
+                         data-local-format="datetime">{{ user.created_at|date:"Y.m.d H:i" }}</div>
+                </div>
+                <div>
+                    <div class="text-xs uppercase tracking-[0.18em] text-stone-400">상태</div>
+                    <div class="mt-1 text-sm font-semibold text-on-surface">{{ user.get_status_display }}</div>
+                </div>
+                <div>
+                    <div class="text-xs uppercase tracking-[0.18em] text-stone-400">권한</div>
+                    <div class="mt-1 text-sm font-semibold text-on-surface">{{ user.get_role_display }}</div>
+                </div>
+            </article>
+        {% empty %}
+            <div class="rounded-[1.5rem] bg-white px-5 py-8 text-sm text-on-surface-variant">제거된 계정이 없습니다.</div>
+        {% endfor %}
+    </div>
+</section>

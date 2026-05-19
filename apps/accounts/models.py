@@ -114,6 +114,16 @@ class Notification(models.Model):
     class Meta:
         db_table = "notifications"
         ordering = ["-created_at", "-id"]
+        indexes = [
+            models.Index(
+                fields=["user", "-created_at", "-id"],
+                name="notifications_user_created_idx",
+            ),
+            models.Index(
+                fields=["user", "is_read", "-created_at"],
+                name="notifications_user_unread_idx",
+            ),
+        ]
 
     def __str__(self):
         return self.title

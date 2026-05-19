@@ -30,6 +30,16 @@ urlpatterns = [
         name="admin_content_management",
     ),
     path(
+        "dashboard/admin/content/posts/<uuid:post_id>/action/",
+        views.admin_post_action,
+        name="admin_post_action",
+    ),
+    path(
+        "dashboard/admin/content/wiki/<uuid:wiki_id>/action/",
+        views.admin_wiki_action,
+        name="admin_wiki_action",
+    ),
+    path(
         "dashboard/admin/tags/<uuid:tag_id>/edit/",
         views.admin_tag_edit_modal,
         name="admin_tag_edit_modal",

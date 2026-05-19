@@ -13,7 +13,18 @@ from apps.accounts.models import (
     UserStatus,
 )
 from apps.accounts.services import SESSION_USER_ID_KEY
-from apps.core.models import IngestionJob, Source, SourceDocument, Tag, TagType
+from apps.core.models import (
+    IngestionJob,
+    Post,
+    PostStatus,
+    Source,
+    SourceDocument,
+    Tag,
+    TagType,
+    WikiDocument,
+    WikiDocumentStatus,
+    WikiRevision,
+)
 
 
 @override_settings(
@@ -85,6 +96,27 @@ class AdminConsoleTests(TestCase):
         self.assertContains(response, "유저 관리")
         self.assertContains(response, "데이터 수집")
 
+    def test_admin_dashboard_can_refresh_signals_section_with_htmx(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        self._login(admin_user)
+
+        response = self.client.get(
+            "/dashboard/admin/",
+            {"section": "signals"},
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="admin-dashboard-signals"')
+        self.assertContains(response, "운영 신호")
+        self.assertNotContains(response, "<html", html=False)
+
     def test_admin_can_create_tag_with_generated_slug(self):
         admin_user = HiveUser.objects.create(
             username="admin_user",
@@ -125,6 +157,48 @@ class AdminConsoleTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "태그 생성")
         self.assertContains(response, "온보딩")
+
+    def test_admin_tag_management_can_refresh_tag_list_with_htmx(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        Tag.objects.create(name="온보딩", slug="온보딩", tag_type=TagType.SYSTEM)
+        self._login(admin_user)
+
+        response = self.client.get(
+            "/dashboard/admin/tags/",
+            {"section": "tag_list"},
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="admin-tags-list"')
+        self.assertContains(response, "온보딩")
+        self.assertNotContains(response, "<html", html=False)
+
+    def test_admin_tag_management_returns_shell_for_htmx_tab_navigation(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        self._login(admin_user)
+
+        response = self.client.get(
+            "/dashboard/admin/tags/",
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="admin-page-shell"')
+        self.assertContains(response, "태그 관리")
+        self.assertNotContains(response, "<html", html=False)
 
     def test_admin_user_management_shows_oauth_connection_status(self):
         admin_user = HiveUser.objects.create(
@@ -635,6 +709,36 @@ class AdminConsoleTests(TestCase):
         self.assertContains(response, "최근 수집 문서")
         self.assertContains(response, "Healthy")
 
+    def test_admin_ingestion_management_can_refresh_sources_section_with_htmx(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        Source.objects.create(
+            name="커뮤니티 공지",
+            target_url="https://example.com/announcements",
+            enabled=True,
+            poll_interval_minutes=15,
+            next_poll_at=timezone.now(),
+            updated_at=timezone.now(),
+        )
+        self._login(admin_user)
+
+        response = self.client.get(
+            "/dashboard/admin/ingestion/",
+            {"section": "sources"},
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="admin-ingestion-sources"')
+        self.assertContains(response, "소스별 수집 현황")
+        self.assertContains(response, "커뮤니티 공지")
+        self.assertNotContains(response, "<html", html=False)
+
     def test_admin_ingestion_management_marks_failing_sources(self):
         admin_user = HiveUser.objects.create(
             username="admin_user",
@@ -684,3 +788,392 @@ class AdminConsoleTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Paused")
         self.assertContains(response, "중지 소스")
+
+    def test_admin_content_management_lists_posts_and_wiki_documents(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        post = Post.objects.create(
+            author_user=admin_user,
+            content_markdown="# 검색 개선\n관리자가 삭제 처리할 수 있는 게시글입니다.",
+            status=PostStatus.PUBLISHED,
+        )
+        wiki_document = WikiDocument.objects.create(
+            title="검색 운영 가이드",
+            slug="search-ops-guide",
+            summary="검색 운영 절차를 정리한 문서입니다.",
+            status=WikiDocumentStatus.PUBLISHED,
+        )
+        revision = WikiRevision.objects.create(
+            wiki_document=wiki_document,
+            revision_number=1,
+            content_markdown="# 검색 운영 가이드",
+        )
+        wiki_document.current_revision = revision
+        wiki_document.save(update_fields=["current_revision", "updated_at"])
+        self._login(admin_user)
+
+        response = self.client.get("/dashboard/admin/content/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "커뮤니티 글 관리")
+        self.assertContains(response, post.title)
+        self.assertContains(response, "위키 문서 관리")
+        self.assertContains(response, wiki_document.title)
+
+    def test_admin_content_management_excludes_draft_posts(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        other_user = HiveUser.objects.create(
+            username="member_user",
+            email="member@example.com",
+            password_hash=make_password("member-pass-123!"),
+            role=UserRole.USER,
+            status=UserStatus.ACTIVE,
+        )
+        Post.objects.create(
+            author_user=other_user,
+            content_markdown="# 초안 글\n관리 화면에 보이면 안 됩니다.",
+            status=PostStatus.DRAFT,
+        )
+        published_post = Post.objects.create(
+            author_user=other_user,
+            content_markdown="# 공개 글\n운영자가 볼 수 있는 게시글입니다.",
+            status=PostStatus.PUBLISHED,
+        )
+        self._login(admin_user)
+
+        response = self.client.get("/dashboard/admin/content/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, published_post.title)
+        self.assertNotContains(response, "초안 글")
+        self.assertNotContains(response, "Draft")
+
+    def test_admin_content_management_can_refresh_posts_section_with_htmx(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        Post.objects.create(
+            author_user=admin_user,
+            content_markdown="# 삭제 후보\n운영자가 볼 수 있는 게시글입니다.",
+            status=PostStatus.PUBLISHED,
+        )
+        self._login(admin_user)
+
+        response = self.client.get(
+            "/dashboard/admin/content/",
+            {"section": "posts"},
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="admin-content-posts"')
+        self.assertContains(response, "커뮤니티 글 관리")
+        self.assertNotContains(response, "<html", html=False)
+
+    def test_admin_content_management_can_filter_posts_by_search_and_tag(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        search_tag = Tag.objects.create(
+            name="검색",
+            slug="검색",
+            tag_type=TagType.SYSTEM,
+        )
+        other_tag = Tag.objects.create(
+            name="운영",
+            slug="운영",
+            tag_type=TagType.SYSTEM,
+        )
+        matching_post = Post.objects.create(
+            author_user=admin_user,
+            content_markdown="# 검색 개선 메모\n이 글만 필터되어야 합니다.",
+            status=PostStatus.PUBLISHED,
+        )
+        matching_post.tags.add(search_tag)
+        other_post = Post.objects.create(
+            author_user=admin_user,
+            content_markdown="# 운영 노트\n다른 태그를 가진 글입니다.",
+            status=PostStatus.PUBLISHED,
+        )
+        other_post.tags.add(other_tag)
+        self._login(admin_user)
+
+        response = self.client.get(
+            "/dashboard/admin/content/",
+            {
+                "section": "posts",
+                "post_query": "검색",
+                "post_tag": search_tag.slug,
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, matching_post.title)
+        self.assertNotContains(response, other_post.title)
+
+    def test_admin_content_management_hides_deleted_posts_by_default(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        visible_post = Post.objects.create(
+            author_user=admin_user,
+            content_markdown="# 공개 글\n기본 목록에 보여야 합니다.",
+            status=PostStatus.PUBLISHED,
+        )
+        deleted_post = Post.objects.create(
+            author_user=admin_user,
+            content_markdown="# 삭제 글\n기본 목록에서는 숨겨져야 합니다.",
+            status=PostStatus.PUBLISHED,
+            deleted_at=timezone.now(),
+        )
+        self._login(admin_user)
+
+        response = self.client.get("/dashboard/admin/content/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, visible_post.title)
+        self.assertNotContains(response, deleted_post.title)
+
+    def test_admin_content_management_can_show_deleted_posts_only(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        active_post = Post.objects.create(
+            author_user=admin_user,
+            content_markdown="# 공개 글\n삭제 전용 보기에서는 보이면 안 됩니다.",
+            status=PostStatus.PUBLISHED,
+        )
+        deleted_post = Post.objects.create(
+            author_user=admin_user,
+            content_markdown="# 삭제 글\n토글을 켜면 보여야 합니다.",
+            status=PostStatus.PUBLISHED,
+            deleted_at=timezone.now(),
+        )
+        self._login(admin_user)
+
+        response = self.client.get(
+            "/dashboard/admin/content/",
+            {"section": "posts", "post_visibility": "deleted"},
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, deleted_post.title)
+        self.assertNotContains(response, active_post.title)
+
+    def test_admin_content_management_can_show_all_posts(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        active_post = Post.objects.create(
+            author_user=admin_user,
+            content_markdown="# 공개 글\n전체 보기에서 보여야 합니다.",
+            status=PostStatus.PUBLISHED,
+        )
+        deleted_post = Post.objects.create(
+            author_user=admin_user,
+            content_markdown="# 삭제 글\n전체 보기에서 보여야 합니다.",
+            status=PostStatus.PUBLISHED,
+            deleted_at=timezone.now(),
+        )
+        self._login(admin_user)
+
+        response = self.client.get(
+            "/dashboard/admin/content/",
+            {"section": "posts", "post_visibility": "all"},
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, active_post.title)
+        self.assertContains(response, deleted_post.title)
+
+    def test_admin_content_management_paginates_posts(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        for index in range(7):
+            Post.objects.create(
+                author_user=admin_user,
+                content_markdown=f"# 게시글 {index}\n페이지네이션 테스트 {index}",
+                status=PostStatus.PUBLISHED,
+            )
+        self._login(admin_user)
+
+        response = self.client.get(
+            "/dashboard/admin/content/",
+            {"section": "posts", "post_page": "2"},
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "2 / 2")
+
+    def test_admin_content_management_can_filter_wiki_documents_by_status(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        archived_document = WikiDocument.objects.create(
+            title="보관 문서",
+            slug="archived-doc",
+            summary="보관된 문서",
+            status=WikiDocumentStatus.ARCHIVED,
+        )
+        published_document = WikiDocument.objects.create(
+            title="게시 문서",
+            slug="published-doc",
+            summary="게시된 문서",
+            status=WikiDocumentStatus.PUBLISHED,
+        )
+        self._login(admin_user)
+
+        response = self.client.get(
+            "/dashboard/admin/content/",
+            {"section": "wiki_documents", "wiki_status": WikiDocumentStatus.ARCHIVED},
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, archived_document.title)
+        self.assertNotContains(response, published_document.title)
+
+    def test_admin_cannot_publish_wiki_document_without_current_revision(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        wiki_document = WikiDocument.objects.create(
+            title="미완성 위키",
+            slug="draft-wiki",
+            summary="현재 리비전이 없는 문서입니다.",
+            status=WikiDocumentStatus.ARCHIVED,
+        )
+        self._login(admin_user)
+
+        response = self.client.post(
+            f"/dashboard/admin/content/wiki/{wiki_document.id}/action/",
+            {"action": "publish"},
+            follow=True,
+        )
+
+        wiki_document.refresh_from_db()
+        self.assertRedirects(response, "/dashboard/admin/content/")
+        self.assertEqual(wiki_document.status, WikiDocumentStatus.ARCHIVED)
+        self.assertContains(
+            response, "현재 리비전이 없는 위키 문서는 게시할 수 없습니다."
+        )
+
+    def test_admin_can_delete_and_restore_post(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        post = Post.objects.create(
+            author_user=admin_user,
+            content_markdown="# 운영 공지\n삭제 대상 게시글입니다.",
+            status=PostStatus.PUBLISHED,
+        )
+        self._login(admin_user)
+
+        delete_response = self.client.post(
+            f"/dashboard/admin/content/posts/{post.id}/action/",
+            {"action": "delete"},
+        )
+        post.refresh_from_db()
+
+        self.assertRedirects(delete_response, "/dashboard/admin/content/")
+        self.assertIsNotNone(post.deleted_at)
+
+        restore_response = self.client.post(
+            f"/dashboard/admin/content/posts/{post.id}/action/",
+            {"action": "restore"},
+        )
+        post.refresh_from_db()
+
+        self.assertRedirects(restore_response, "/dashboard/admin/content/")
+        self.assertIsNone(post.deleted_at)
+
+    def test_admin_can_change_wiki_document_status(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        wiki_document = WikiDocument.objects.create(
+            title="운영 정책 문서",
+            slug="ops-policy",
+            summary="관리자가 상태를 바꿀 수 있는 위키 문서입니다.",
+            status=WikiDocumentStatus.PUBLISHED,
+        )
+        revision = WikiRevision.objects.create(
+            wiki_document=wiki_document,
+            revision_number=1,
+            content_markdown="# 운영 정책 문서",
+        )
+        wiki_document.current_revision = revision
+        wiki_document.save(update_fields=["current_revision", "updated_at"])
+        self._login(admin_user)
+
+        archive_response = self.client.post(
+            f"/dashboard/admin/content/wiki/{wiki_document.id}/action/",
+            {"action": "archive"},
+        )
+        wiki_document.refresh_from_db()
+        self.assertRedirects(archive_response, "/dashboard/admin/content/")
+        self.assertEqual(wiki_document.status, WikiDocumentStatus.ARCHIVED)
+
+        publish_response = self.client.post(
+            f"/dashboard/admin/content/wiki/{wiki_document.id}/action/",
+            {"action": "publish"},
+        )
+        wiki_document.refresh_from_db()
+        self.assertRedirects(publish_response, "/dashboard/admin/content/")
+        self.assertEqual(wiki_document.status, WikiDocumentStatus.PUBLISHED)

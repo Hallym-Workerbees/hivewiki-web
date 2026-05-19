@@ -1,0 +1,50 @@
+<div id="admin-ingestion-jobs"
+     class="space-y-5 rounded-[2rem] bg-surface-container-low p-6 shadow-ambient lg:p-8">
+    {% include "partials/section_header.html" with eyebrow="Recent Jobs" title="최근 ingestion job" description="큐에 들어간 작업과 실패 메시지를 빠르게 확인합니다." refresh_url=request.path refresh_section="recent_jobs" refresh_target="#admin-ingestion-jobs" %}
+    <div class="space-y-3">
+        {% for job in recent_jobs %}
+            <article class="rounded-[1.5rem] bg-white px-5 py-5">
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <div class="font-semibold text-on-surface">{{ job.source_document.title }}</div>
+                        <div class="mt-1 text-xs text-stone-500">{{ job.source_document.source.name }}</div>
+                    </div>
+                    <div class="rounded-full px-3 py-1 text-xs font-semibold {% if job.status == 'FAILED' %}bg-error-container text-on-error-container{% elif job.status == 'COMPLETED' %}bg-secondary-container text-on-secondary-container{% else %}bg-surface-container-low text-on-surface-variant{% endif %}">
+                        {{ job.status }}
+                    </div>
+                </div>
+                <div class="mt-4 grid gap-3 text-sm text-on-surface-variant sm:grid-cols-3">
+                    <div>
+                        <div class="text-xs uppercase tracking-[0.18em] text-stone-400">Queued</div>
+                        <div class="mt-1 font-semibold text-on-surface timezone-sensitive"
+                             data-local-datetime="{{ job.queued_at|date:'c' }}"
+                             data-local-format="datetime">{{ job.queued_at|date:"Y-m-d H:i" }}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs uppercase tracking-[0.18em] text-stone-400">Retry</div>
+                        <div class="mt-1 font-semibold text-on-surface">{{ job.retry_count }}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs uppercase tracking-[0.18em] text-stone-400">Completed</div>
+                        <div class="mt-1 font-semibold text-on-surface">
+                            {% if job.completed_at %}
+                                <span class="timezone-sensitive"
+                                      data-local-datetime="{{ job.completed_at|date:'c' }}"
+                                      data-local-format="datetime">{{ job.completed_at|date:"Y-m-d H:i" }}</span>
+                            {% else %}
+                                -
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% if job.error_message %}
+                    <div class="mt-4 rounded-2xl bg-error-container px-4 py-3 text-sm text-on-error-container">
+                        {{ job.error_message }}
+                    </div>
+                {% endif %}
+            </article>
+        {% empty %}
+            <div class="rounded-[1.5rem] bg-white px-5 py-8 text-sm text-on-surface-variant">생성된 ingestion job이 없습니다.</div>
+        {% endfor %}
+    </div>
+</div>

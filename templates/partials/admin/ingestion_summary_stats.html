@@ -1,0 +1,8 @@
+<section id="admin-ingestion-stats"
+         class="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+    {% include "partials/stat_tile.html" with label="소스" value=source_count description="현재 연결된 전체 수집 소스 수" %}
+    {% include "partials/stat_tile.html" with label="Healthy" value=healthy_source_count description="문제 없이 수집 중인 소스 수" %}
+    {% include "partials/stat_tile.html" with label="Paused" value=paused_source_count description="관리자가 의도적으로 중지한 소스 수" %}
+    {% include "partials/stat_tile.html" with label="Warning" value=warning_source_count description="대기 문서나 잡이 쌓인 소스 수" %}
+    {% include "partials/stat_tile.html" with label="Failing" value=failing_source_count description="실패 징후가 있는 소스 수" %}
+</section>

@@ -1,0 +1,7 @@
+<section id="admin-users-stats"
+         class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    {% include "partials/stat_tile.html" with label="전체 유저" value=user_count description="현재 등록된 전체 사용자 수" %}
+    {% include "partials/stat_tile.html" with label="활성" value=active_user_count description="정상 사용 가능한 계정 수" %}
+    {% include "partials/stat_tile.html" with label="관리자" value=admin_user_count description="운영 권한을 가진 계정 수" %}
+    {% include "partials/stat_tile.html" with label="제거됨" value=deleted_user_count description="운영 기록만 남아 있는 제거된 계정 수" %}
+</section>

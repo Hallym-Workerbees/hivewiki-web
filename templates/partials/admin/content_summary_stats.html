@@ -1,0 +1,6 @@
+<section class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    {% include "partials/stat_tile.html" with label="노출 게시글" value=visible_post_count description="현재 커뮤니티에서 보이는 게시글 수" %}
+    {% include "partials/stat_tile.html" with label="삭제 게시글" value=deleted_post_count description="운영자가 삭제 처리한 게시글 수" %}
+    {% include "partials/stat_tile.html" with label="게시 위키" value=published_wiki_count description="현재 노출 중인 위키 문서 수" %}
+    {% include "partials/stat_tile.html" with label="보관/삭제 위키" value=archived_wiki_count|add:deleted_wiki_count description="운영자가 상태를 바꾼 위키 문서 수" %}
+</section>

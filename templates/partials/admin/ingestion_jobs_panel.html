@@ -1,6 +1,49 @@
 <div id="admin-ingestion-jobs"
      class="space-y-5 rounded-[2rem] bg-surface-container-low p-6 shadow-ambient lg:p-8">
-    {% include "partials/section_header.html" with eyebrow="Recent Jobs" title="최근 ingestion job" description="큐에 들어간 작업과 실패 메시지를 빠르게 확인합니다." refresh_url=request.path refresh_section="recent_jobs" refresh_target="#admin-ingestion-jobs" %}
+    {% include "partials/section_header.html" with eyebrow="Recent Jobs" title="최근 ingestion job" description="큐에 들어간 작업과 실패 메시지를 빠르게 확인합니다." refresh_url=request.path refresh_query=jobs_refresh_query refresh_section="recent_jobs" refresh_target="#admin-ingestion-jobs" %}
+    <form method="get"
+          action="{{ request.path }}"
+          hx-get="{{ request.path }}"
+          hx-target="#admin-ingestion-jobs"
+          hx-swap="outerHTML"
+          hx-push-url="true"
+          class="grid gap-3 rounded-[1.5rem] bg-white p-4 lg:grid-cols-[minmax(0,1.2fr)_220px_auto]">
+        <input type="hidden" name="section" value="recent_jobs">
+        <input type="hidden" name="source_query" value="{{ source_query }}">
+        <input type="hidden"
+               name="source_health"
+               value="{{ selected_source_health }}">
+        <input type="hidden"
+               name="source_enabled"
+               value="{{ selected_source_enabled }}">
+        <input type="hidden" name="source_page" value="{{ sources.number }}">
+        <input type="hidden" name="document_query" value="{{ document_query }}">
+        <input type="hidden"
+               name="document_fetch_status"
+               value="{{ selected_document_fetch_status }}">
+        <input type="hidden"
+               name="document_wiki_status"
+               value="{{ selected_document_wiki_status }}">
+        <input type="hidden"
+               name="document_page"
+               value="{{ recent_documents.number }}">
+        <input type="search"
+               name="job_query"
+               value="{{ job_query }}"
+               placeholder="문서 제목, URL, 에러 메시지 검색"
+               class="min-w-0 rounded-2xl border-0 bg-surface-container-low px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant focus:ring-2 focus:ring-primary-container">
+        <select name="job_status"
+                class="min-w-0 rounded-2xl border-0 bg-surface-container-low px-4 py-3 text-sm text-on-surface focus:ring-2 focus:ring-primary-container">
+            {% for value, label in job_status_choices %}
+                <option value="{{ value }}"
+                        {% if selected_job_status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit"
+                class="whitespace-nowrap rounded-2xl bg-primary-container px-4 py-3 text-sm font-semibold text-on-primary-container lg:justify-self-start">
+            적용
+        </button>
+    </form>
     <div class="space-y-3">
         {% for job in recent_jobs %}
             <article class="rounded-[1.5rem] bg-white px-5 py-5">
@@ -47,4 +90,29 @@
             <div class="rounded-[1.5rem] bg-white px-5 py-8 text-sm text-on-surface-variant">생성된 ingestion job이 없습니다.</div>
         {% endfor %}
     </div>
+    {% if recent_jobs.paginator.num_pages > 1 %}
+        <div class="flex items-center justify-between gap-4 border-t border-outline-variant/70 pt-5 text-sm">
+            {% if recent_jobs.has_previous %}
+                <a href="{{ job_prev_url }}"
+                   hx-get="{{ job_prev_url }}"
+                   hx-target="#admin-ingestion-jobs"
+                   hx-swap="outerHTML"
+                   hx-push-url="true"
+                   class="rounded-2xl bg-surface-container-high px-4 py-2 font-semibold text-primary">이전</a>
+            {% else %}
+                <span class="rounded-2xl bg-surface-container-high px-4 py-2 text-on-surface-variant">이전</span>
+            {% endif %}
+            <span class="text-on-surface-variant">{{ recent_jobs.number }} / {{ recent_jobs.paginator.num_pages }}</span>
+            {% if recent_jobs.has_next %}
+                <a href="{{ job_next_url }}"
+                   hx-get="{{ job_next_url }}"
+                   hx-target="#admin-ingestion-jobs"
+                   hx-swap="outerHTML"
+                   hx-push-url="true"
+                   class="rounded-2xl bg-surface-container-high px-4 py-2 font-semibold text-primary">다음</a>
+            {% else %}
+                <span class="rounded-2xl bg-surface-container-high px-4 py-2 text-on-surface-variant">다음</span>
+            {% endif %}
+        </div>
+    {% endif %}
 </div>

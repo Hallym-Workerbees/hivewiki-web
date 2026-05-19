@@ -1,6 +1,49 @@
 <div id="admin-ingestion-documents"
      class="space-y-5 rounded-[2rem] bg-surface-container-low p-6 shadow-ambient lg:p-8">
-    {% include "partials/section_header.html" with eyebrow="Recent Documents" title="최근 수집 문서" description="어떤 소스에서 문서가 들어왔는지와 fetch/wiki 상태를 같이 봅니다." refresh_url=request.path refresh_section="recent_documents" refresh_target="#admin-ingestion-documents" %}
+    {% include "partials/section_header.html" with eyebrow="Recent Documents" title="최근 수집 문서" description="어떤 소스에서 문서가 들어왔는지와 fetch/wiki 상태를 같이 봅니다." refresh_url=request.path refresh_query=documents_refresh_query refresh_section="recent_documents" refresh_target="#admin-ingestion-documents" %}
+    <form method="get"
+          action="{{ request.path }}"
+          hx-get="{{ request.path }}"
+          hx-target="#admin-ingestion-documents"
+          hx-swap="outerHTML"
+          hx-push-url="true"
+          class="grid gap-3 rounded-[1.5rem] bg-white p-4 lg:grid-cols-[minmax(0,1.2fr)_180px] xl:grid-cols-[minmax(0,1.2fr)_180px_180px_auto]">
+        <input type="hidden" name="section" value="recent_documents">
+        <input type="hidden" name="source_query" value="{{ source_query }}">
+        <input type="hidden"
+               name="source_health"
+               value="{{ selected_source_health }}">
+        <input type="hidden"
+               name="source_enabled"
+               value="{{ selected_source_enabled }}">
+        <input type="hidden" name="source_page" value="{{ sources.number }}">
+        <input type="hidden" name="job_query" value="{{ job_query }}">
+        <input type="hidden" name="job_status" value="{{ selected_job_status }}">
+        <input type="hidden" name="job_page" value="{{ recent_jobs.number }}">
+        <input type="search"
+               name="document_query"
+               value="{{ document_query }}"
+               placeholder="문서 제목, URL, 소스 검색"
+               class="min-w-0 rounded-2xl border-0 bg-surface-container-low px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant focus:ring-2 focus:ring-primary-container">
+        <select name="document_fetch_status"
+                class="min-w-0 rounded-2xl border-0 bg-surface-container-low px-4 py-3 text-sm text-on-surface focus:ring-2 focus:ring-primary-container">
+            {% for value, label in document_fetch_status_choices %}
+                <option value="{{ value }}"
+                        {% if selected_document_fetch_status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+        <select name="document_wiki_status"
+                class="min-w-0 rounded-2xl border-0 bg-surface-container-low px-4 py-3 text-sm text-on-surface focus:ring-2 focus:ring-primary-container">
+            {% for value, label in document_wiki_status_choices %}
+                <option value="{{ value }}"
+                        {% if selected_document_wiki_status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit"
+                class="whitespace-nowrap rounded-2xl bg-primary-container px-4 py-3 text-sm font-semibold text-on-primary-container">
+            적용
+        </button>
+    </form>
     <div class="space-y-3">
         {% for document in recent_documents %}
             <article class="rounded-[1.5rem] bg-white px-5 py-5">
@@ -22,4 +65,29 @@
             <div class="rounded-[1.5rem] bg-white px-5 py-8 text-sm text-on-surface-variant">수집된 문서가 없습니다.</div>
         {% endfor %}
     </div>
+    {% if recent_documents.paginator.num_pages > 1 %}
+        <div class="flex items-center justify-between gap-4 border-t border-outline-variant/70 pt-5 text-sm">
+            {% if recent_documents.has_previous %}
+                <a href="{{ document_prev_url }}"
+                   hx-get="{{ document_prev_url }}"
+                   hx-target="#admin-ingestion-documents"
+                   hx-swap="outerHTML"
+                   hx-push-url="true"
+                   class="rounded-2xl bg-surface-container-high px-4 py-2 font-semibold text-primary">이전</a>
+            {% else %}
+                <span class="rounded-2xl bg-surface-container-high px-4 py-2 text-on-surface-variant">이전</span>
+            {% endif %}
+            <span class="text-on-surface-variant">{{ recent_documents.number }} / {{ recent_documents.paginator.num_pages }}</span>
+            {% if recent_documents.has_next %}
+                <a href="{{ document_next_url }}"
+                   hx-get="{{ document_next_url }}"
+                   hx-target="#admin-ingestion-documents"
+                   hx-swap="outerHTML"
+                   hx-push-url="true"
+                   class="rounded-2xl bg-surface-container-high px-4 py-2 font-semibold text-primary">다음</a>
+            {% else %}
+                <span class="rounded-2xl bg-surface-container-high px-4 py-2 text-on-surface-variant">다음</span>
+            {% endif %}
+        </div>
+    {% endif %}
 </div>

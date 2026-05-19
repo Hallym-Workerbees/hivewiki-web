@@ -15,10 +15,13 @@ from apps.accounts.models import (
 from apps.accounts.services import SESSION_USER_ID_KEY
 from apps.core.models import (
     IngestionJob,
+    IngestionJobStatus,
     Post,
     PostStatus,
     Source,
     SourceDocument,
+    SourceDocumentFetchStatus,
+    SourceDocumentWikiStatus,
     Tag,
     TagType,
     WikiDocument,
@@ -788,6 +791,147 @@ class AdminConsoleTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Paused")
         self.assertContains(response, "중지 소스")
+
+    def test_admin_ingestion_management_filters_sources_by_query_and_health(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        Source.objects.create(
+            name="공지 RSS",
+            target_url="https://example.com/announcements",
+            enabled=True,
+            poll_interval_minutes=15,
+            next_poll_at=timezone.now(),
+            updated_at=timezone.now(),
+        )
+        Source.objects.create(
+            name="실패 RSS",
+            target_url="https://example.com/failing",
+            enabled=True,
+            poll_interval_minutes=15,
+            next_poll_at=timezone.now(),
+            consecutive_failures=2,
+            last_error_message="fetch failed",
+            updated_at=timezone.now(),
+        )
+        self._login(admin_user)
+
+        response = self.client.get(
+            "/dashboard/admin/ingestion/",
+            {
+                "section": "sources",
+                "source_query": "RSS",
+                "source_health": "failing",
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "실패 RSS")
+        self.assertNotContains(response, "공지 RSS")
+
+    def test_admin_ingestion_management_filters_documents_and_jobs_with_htmx(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        source = Source.objects.create(
+            name="교내 공지",
+            target_url="https://example.com/announcements",
+            enabled=True,
+            poll_interval_minutes=15,
+            next_poll_at=timezone.now(),
+            updated_at=timezone.now(),
+        )
+        matching_document = SourceDocument.objects.create(
+            source=source,
+            canonical_url="https://example.com/doc-1",
+            title="장학금 공지",
+            fetch_status=SourceDocumentFetchStatus.FAILED,
+            wiki_status=SourceDocumentWikiStatus.REQUESTED,
+        )
+        other_document = SourceDocument.objects.create(
+            source=source,
+            canonical_url="https://example.com/doc-2",
+            title="기숙사 안내",
+            fetch_status=SourceDocumentFetchStatus.FETCHED,
+            wiki_status=SourceDocumentWikiStatus.COMPLETED,
+        )
+        IngestionJob.objects.create(
+            source_document=matching_document,
+            status=IngestionJobStatus.FAILED,
+            error_message="timeout",
+        )
+        other_document.ingestion_jobs.create(
+            status=IngestionJobStatus.COMPLETED,
+            error_message="",
+        )
+        self._login(admin_user)
+
+        document_response = self.client.get(
+            "/dashboard/admin/ingestion/",
+            {
+                "section": "recent_documents",
+                "document_query": "장학금",
+                "document_fetch_status": SourceDocumentFetchStatus.FAILED,
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(document_response.status_code, 200)
+        self.assertContains(document_response, "장학금 공지")
+        self.assertNotContains(document_response, "기숙사 안내")
+
+        job_response = self.client.get(
+            "/dashboard/admin/ingestion/",
+            {
+                "section": "recent_jobs",
+                "job_query": "timeout",
+                "job_status": IngestionJobStatus.FAILED,
+            },
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(job_response.status_code, 200)
+        self.assertContains(job_response, "장학금 공지")
+        self.assertNotContains(job_response, "기숙사 안내")
+
+    def test_admin_ingestion_management_paginates_sources_panel(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        for index in range(7):
+            Source.objects.create(
+                name=f"소스 {index}",
+                target_url=f"https://example.com/{index}",
+                enabled=True,
+                poll_interval_minutes=15,
+                next_poll_at=timezone.now(),
+                updated_at=timezone.now(),
+            )
+        self._login(admin_user)
+
+        response = self.client.get(
+            "/dashboard/admin/ingestion/",
+            {"section": "sources", "source_page": 2},
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "소스 6")
+        self.assertNotContains(response, "소스 0")
+        self.assertContains(response, "2 / 2")
 
     def test_admin_content_management_lists_posts_and_wiki_documents(self):
         admin_user = HiveUser.objects.create(

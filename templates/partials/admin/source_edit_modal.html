@@ -43,5 +43,20 @@
                 변경 저장
             </button>
         </form>
+        <div class="mt-6 rounded-[1.5rem] border border-red-200 bg-red-50 px-5 py-5">
+            <div class="text-sm font-semibold text-red-700">소스 제거</div>
+            <p class="mt-2 text-sm leading-7 text-red-700/90">이 소스를 삭제하면 연결된 수집 문서와 ingestion job도 함께 제거됩니다.</p>
+            <form method="post"
+                  hx-post="{% url 'admin_source_edit_modal' source.id %}"
+                  hx-target="#admin-modal-root"
+                  hx-swap="innerHTML"
+                  class="mt-4">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="delete">
+                <button type="submit"
+                        onclick="return window.confirm('이 소스를 삭제하면 연결된 수집 문서와 ingestion job도 함께 제거됩니다. 계속할까요?')"
+                        class="rounded-2xl bg-red-600 px-4 py-3 text-sm font-bold text-white">소스 삭제</button>
+            </form>
+        </div>
     </div>
 </div>

@@ -142,7 +142,7 @@ class SourceForm(forms.ModelForm):
         if self.instance.pk and self.instance.next_poll_at:
             next_poll_at = _truncate_to_minute(self.instance.next_poll_at)
             initial_value = timezone.localtime(next_poll_at).strftime("%Y-%m-%dT%H:%M")
-            self.initial.setdefault("next_poll_at", initial_value)
+            self.initial["next_poll_at"] = initial_value
             self.fields["next_poll_at"].widget.attrs["data-local-datetime-source"] = (
                 next_poll_at.astimezone(UTC).isoformat(timespec="minutes")
             )

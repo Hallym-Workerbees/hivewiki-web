@@ -7,7 +7,7 @@
           hx-target="#admin-ingestion-documents"
           hx-swap="outerHTML"
           hx-push-url="true"
-          class="grid gap-3 rounded-[1.5rem] bg-white p-4 lg:grid-cols-[minmax(0,1.2fr)_180px] xl:grid-cols-[minmax(0,1.2fr)_180px_180px_auto]">
+          class="space-y-3 rounded-[1.5rem] bg-white p-4">
         <input type="hidden" name="section" value="recent_documents">
         <input type="hidden" name="source_query" value="{{ source_query }}">
         <input type="hidden"
@@ -24,25 +24,27 @@
                name="document_query"
                value="{{ document_query }}"
                placeholder="문서 제목, URL, 소스 검색"
-               class="min-w-0 rounded-2xl border-0 bg-surface-container-low px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant focus:ring-2 focus:ring-primary-container">
-        <select name="document_fetch_status"
-                class="min-w-0 rounded-2xl border-0 bg-surface-container-low px-4 py-3 text-sm text-on-surface focus:ring-2 focus:ring-primary-container">
-            {% for value, label in document_fetch_status_choices %}
-                <option value="{{ value }}"
-                        {% if selected_document_fetch_status == value %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-        </select>
-        <select name="document_wiki_status"
-                class="min-w-0 rounded-2xl border-0 bg-surface-container-low px-4 py-3 text-sm text-on-surface focus:ring-2 focus:ring-primary-container">
-            {% for value, label in document_wiki_status_choices %}
-                <option value="{{ value }}"
-                        {% if selected_document_wiki_status == value %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-        </select>
-        <button type="submit"
-                class="whitespace-nowrap rounded-2xl bg-primary-container px-4 py-3 text-sm font-semibold text-on-primary-container">
-            적용
-        </button>
+               class="w-full min-w-0 rounded-2xl border-0 bg-surface-container-low px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant focus:ring-2 focus:ring-primary-container">
+        <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+            <select name="document_fetch_status"
+                    class="w-full min-w-0 rounded-2xl border-0 bg-surface-container-low px-4 py-3 text-sm text-on-surface focus:ring-2 focus:ring-primary-container">
+                {% for value, label in document_fetch_status_choices %}
+                    <option value="{{ value }}"
+                            {% if selected_document_fetch_status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <select name="document_wiki_status"
+                    class="w-full min-w-0 rounded-2xl border-0 bg-surface-container-low px-4 py-3 text-sm text-on-surface focus:ring-2 focus:ring-primary-container">
+                {% for value, label in document_wiki_status_choices %}
+                    <option value="{{ value }}"
+                            {% if selected_document_wiki_status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit"
+                    class="whitespace-nowrap rounded-2xl bg-primary-container px-4 py-3 text-sm font-semibold text-on-primary-container">
+                적용
+            </button>
+        </div>
     </form>
     <div class="space-y-3">
         {% for document in recent_documents %}

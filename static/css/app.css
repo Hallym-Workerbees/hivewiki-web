@@ -67,6 +67,25 @@ h6 {
   animation: flash-exit 220ms ease-in forwards;
 }
 
+@keyframes admin-refresh-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+[data-admin-refresh-button].is-refreshing [data-admin-refresh-icon-static] {
+  opacity: 0;
+}
+
+[data-admin-refresh-button].is-refreshing [data-admin-refresh-icon-spinner] {
+  opacity: 1;
+  animation: admin-refresh-spin 720ms linear infinite;
+}
+
 .js-timezone-pending .timezone-sensitive {
   visibility: hidden;
 }

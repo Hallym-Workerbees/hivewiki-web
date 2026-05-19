@@ -15,6 +15,10 @@ from apps.core.models import (
     PostStatus,
     Tag,
     TagType,
+    WikiDocument,
+    WikiDocumentStatus,
+    WikiGenerationType,
+    WikiRevision,
 )
 from apps.core.views import _community_visible_posts_queryset
 
@@ -26,6 +30,14 @@ from apps.core.views import _community_visible_posts_queryset
             "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
             "LOCATION": "hivewiki-community-test-cache",
         }
+    },
+    STORAGES={
+        "default": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+        },
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        },
     },
 )
 class CommunityViewTests(TestCase):
@@ -216,6 +228,61 @@ class CommunityViewTests(TestCase):
         )
         comment.refresh_from_db()
         self.assertEqual(comment.content, "수정된 댓글")
+
+    def test_community_detail_prioritizes_related_posts_over_hot_posts(self):
+        tag = Tag.objects.create(name="검색", slug="search", tag_type=TagType.USER)
+        shared_document = WikiDocument.objects.create(
+            title="검색 구조 문서",
+            slug="search-structure-doc",
+            summary="검색 구조를 정리한 문서입니다.",
+            status=WikiDocumentStatus.PUBLISHED,
+            updated_at=timezone.now(),
+        )
+        shared_revision = WikiRevision.objects.create(
+            wiki_document=shared_document,
+            revision_number=1,
+            content_markdown="## 검색 구조",
+            generation_type=WikiGenerationType.AI,
+            generation_model="gpt-5.5",
+        )
+        shared_document.current_revision = shared_revision
+        shared_document.save(update_fields=["current_revision"])
+
+        current_post = Post.objects.create(
+            author_user=self.user,
+            content_markdown="# 검색 개선 논의\n\n검색 결과 구조를 다듬습니다.",
+            status=PostStatus.PUBLISHED,
+        )
+        current_post.tags.add(tag)
+        current_post.wiki_documents.add(shared_document)
+
+        related_post = Post.objects.create(
+            author_user=self.other_user,
+            content_markdown="# 검색 UX 제안\n\n검색 구조와 필터 동선을 정리합니다.",
+            status=PostStatus.PUBLISHED,
+        )
+        related_post.tags.add(tag)
+        related_post.wiki_documents.add(shared_document)
+
+        hot_but_unrelated_post = Post.objects.create(
+            author_user=self.other_user,
+            content_markdown="# 자유 주제 토론\n\n검색과 무관한 인기 글입니다.",
+            status=PostStatus.PUBLISHED,
+        )
+        for index in range(3):
+            Comment.objects.create(
+                post=hot_but_unrelated_post,
+                author_user=self.user,
+                content=f"인기 댓글 {index}",
+            )
+
+        response = self.client.get(f"/community/{current_post.id}/")
+
+        self.assertEqual(response.status_code, 200)
+        related_posts = response.context["related_posts"]
+        self.assertGreaterEqual(len(related_posts), 2)
+        self.assertEqual(related_posts[0].pk, related_post.pk)
+        self.assertContains(response, "연관 게시글")
 
     @patch("apps.core.views.notify_post_liked")
     def test_post_like_creates_notification_on_new_like(self, mock_notify_post_liked):

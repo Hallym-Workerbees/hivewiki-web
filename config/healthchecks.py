@@ -2,8 +2,14 @@ import ipaddress
 
 from django.conf import settings
 
+from config.observability import liveness_probe, readiness_probe
+
 HEALTHCHECK_PATHS = frozenset(("/livez/", "/readyz/"))
 ELB_HEALTHCHECK_USER_AGENT_PREFIX = "ELB-HealthChecker/"
+HEALTHCHECK_VIEWS = {
+    "/livez/": liveness_probe,
+    "/readyz/": readiness_probe,
+}
 
 
 class HealthcheckHostNormalizationMiddleware:
@@ -12,6 +18,9 @@ class HealthcheckHostNormalizationMiddleware:
 
     def __call__(self, request):
         self._normalize_host_for_healthcheck(request)
+        healthcheck_view = HEALTHCHECK_VIEWS.get(request.path)
+        if healthcheck_view is not None:
+            return healthcheck_view(request)
         return self.get_response(request)
 
     def _normalize_host_for_healthcheck(self, request):

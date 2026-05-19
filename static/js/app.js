@@ -1,3 +1,5 @@
+const ADMIN_REFRESH_SPIN_DURATION_MS = 720;
+
 document.body.addEventListener("htmx:afterSwap", (event) => {
   const target = event.detail.target;
   if (target && target.id) {
@@ -10,6 +12,48 @@ document.body.addEventListener("htmx:afterSwap", (event) => {
   initializeCodeCopyButtons(root);
   initializeProfileImageUploader(root);
   renderMath(target || document.body);
+});
+
+window.startAdminRefreshAnimation = function startAdminRefreshAnimation(button) {
+  if (!(button instanceof HTMLElement)) {
+    return;
+  }
+  window.clearTimeout(Number(button.dataset.refreshStopTimer || 0));
+  button.classList.remove("is-refreshing");
+  // Force a reflow so repeat clicks restart the spin immediately.
+  void button.offsetWidth;
+  button.dataset.refreshStartedAt = String(Date.now());
+  button.classList.add("is-refreshing");
+};
+
+window.stopAdminRefreshAnimation = function stopAdminRefreshAnimation() {
+  document.querySelectorAll("[data-admin-refresh-button].is-refreshing").forEach((button) => {
+    if (!(button instanceof HTMLElement)) {
+      return;
+    }
+    const startedAt = Number(button.dataset.refreshStartedAt || 0);
+    const elapsed = startedAt ? Date.now() - startedAt : ADMIN_REFRESH_SPIN_DURATION_MS;
+    const progressInCurrentSpin = elapsed % ADMIN_REFRESH_SPIN_DURATION_MS;
+    const remaining =
+      progressInCurrentSpin === 0
+        ? 0
+        : ADMIN_REFRESH_SPIN_DURATION_MS - progressInCurrentSpin;
+    window.clearTimeout(Number(button.dataset.refreshStopTimer || 0));
+    const timerId = window.setTimeout(() => {
+      button.classList.remove("is-refreshing");
+      delete button.dataset.refreshStartedAt;
+      delete button.dataset.refreshStopTimer;
+    }, remaining);
+    button.dataset.refreshStopTimer = String(timerId);
+  });
+};
+
+document.body.addEventListener("htmx:afterRequest", () => {
+  window.stopAdminRefreshAnimation();
+});
+
+document.body.addEventListener("htmx:responseError", () => {
+  window.stopAdminRefreshAnimation();
 });
 
 function closeAdminModal() {

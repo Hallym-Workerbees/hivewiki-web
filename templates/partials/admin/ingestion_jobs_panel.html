@@ -7,7 +7,7 @@
           hx-target="#admin-ingestion-jobs"
           hx-swap="outerHTML"
           hx-push-url="true"
-          class="grid gap-3 rounded-[1.5rem] bg-white p-4 lg:grid-cols-[minmax(0,1.2fr)_220px_auto]">
+          class="space-y-3 rounded-[1.5rem] bg-white p-4">
         <input type="hidden" name="section" value="recent_jobs">
         <input type="hidden" name="source_query" value="{{ source_query }}">
         <input type="hidden"
@@ -31,18 +31,20 @@
                name="job_query"
                value="{{ job_query }}"
                placeholder="문서 제목, URL, 에러 메시지 검색"
-               class="min-w-0 rounded-2xl border-0 bg-surface-container-low px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant focus:ring-2 focus:ring-primary-container">
-        <select name="job_status"
-                class="min-w-0 rounded-2xl border-0 bg-surface-container-low px-4 py-3 text-sm text-on-surface focus:ring-2 focus:ring-primary-container">
-            {% for value, label in job_status_choices %}
-                <option value="{{ value }}"
-                        {% if selected_job_status == value %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-        </select>
-        <button type="submit"
-                class="whitespace-nowrap rounded-2xl bg-primary-container px-4 py-3 text-sm font-semibold text-on-primary-container lg:justify-self-start">
-            적용
-        </button>
+               class="w-full min-w-0 rounded-2xl border-0 bg-surface-container-low px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant focus:ring-2 focus:ring-primary-container">
+        <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+            <select name="job_status"
+                    class="w-full min-w-0 rounded-2xl border-0 bg-surface-container-low px-4 py-3 text-sm text-on-surface focus:ring-2 focus:ring-primary-container">
+                {% for value, label in job_status_choices %}
+                    <option value="{{ value }}"
+                            {% if selected_job_status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit"
+                    class="whitespace-nowrap rounded-2xl bg-primary-container px-4 py-3 text-sm font-semibold text-on-primary-container">
+                적용
+            </button>
+        </div>
     </form>
     <div class="space-y-3">
         {% for job in recent_jobs %}

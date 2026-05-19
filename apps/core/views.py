@@ -1,10 +1,11 @@
 import logging
+import re
 from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Count, Prefetch, Q
+from django.db.models import Case, Count, IntegerField, Prefetch, Q, Value, When
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -38,7 +39,7 @@ from .models import (
     WikiDocument,
     WikiDocumentStatus,
 )
-from .search import get_wiki_search_results
+from .search import get_post_search_results, get_wiki_search_results
 from .wiki_markdown import strip_leading_title_heading
 
 logger = logging.getLogger(__name__)
@@ -756,7 +757,9 @@ def wiki_bookmark_toggle(request, slug):
 def integrated_search(request):
     query = request.GET.get("q", "").strip()
     is_htmx_request = request.headers.get("HX-Request") == "true"
-    search_results = get_wiki_search_results(query=query, limit=16)
+    wiki_search_results = get_wiki_search_results(query=query, limit=16)
+    post_search_results = get_post_search_results(query=query, limit=12)
+    _attach_linked_wiki_documents(post_search_results["items"])
     template_name = (
         "partials/global_search_results.html"
         if is_htmx_request
@@ -769,8 +772,10 @@ def integrated_search(request):
             "page_heading": "Search",
             "query": query,
             "list_tags": LIST_TAGS,
-            "wiki_items": search_results["items"],
-            "wiki_result_count": search_results["total_count"],
+            "wiki_items": wiki_search_results["items"],
+            "wiki_result_count": wiki_search_results["total_count"],
+            "post_items": post_search_results["items"],
+            "post_result_count": post_search_results["total_count"],
             "show_blank_query_state": is_htmx_request and not query,
         },
     )
@@ -860,6 +865,90 @@ def _community_hot_posts_queryset():
             like_count=Count("post_likes__user", distinct=True),
         )
         .order_by("-comment_count", "-created_at", "-id")
+    )
+
+
+def _community_related_posts_queryset(post):
+    shared_tag_ids = list(post.tags.values_list("pk", flat=True))
+    shared_wiki_document_ids = list(post.wiki_documents.values_list("pk", flat=True))
+    keyword_candidates = re.findall(
+        r"[\w-]{2,}",
+        " ".join(
+            [
+                post.title_cache or "",
+                post.summary_cache or "",
+                post.body_markdown_cache or "",
+            ]
+        ),
+        flags=re.UNICODE,
+    )
+    seen_keywords: set[str] = set()
+    keywords: list[str] = []
+    for keyword in keyword_candidates:
+        normalized_keyword = keyword.casefold()
+        if normalized_keyword in seen_keywords:
+            continue
+        seen_keywords.add(normalized_keyword)
+        keywords.append(keyword)
+        if len(keywords) >= 6:
+            break
+
+    queryset = (
+        Post.objects.filter(status=PostStatus.PUBLISHED, deleted_at__isnull=True)
+        .exclude(pk=post.pk)
+        .select_related("author_user")
+        .prefetch_related("tags", "wiki_documents")
+        .annotate(
+            comment_count=Count(
+                "comments",
+                filter=Q(comments__deleted_at__isnull=True),
+                distinct=True,
+            ),
+            like_count=Count("post_likes__user", distinct=True),
+            shared_tag_count=Count(
+                "tags",
+                filter=Q(tags__in=shared_tag_ids),
+                distinct=True,
+            ),
+            shared_wiki_document_count=Count(
+                "wiki_documents",
+                filter=Q(wiki_documents__in=shared_wiki_document_ids),
+                distinct=True,
+            ),
+        )
+    )
+
+    if keywords:
+        text_match_score = Value(0, output_field=IntegerField())
+        for keyword in keywords:
+            text_match_score += Case(
+                When(
+                    Q(title_cache__icontains=keyword)
+                    | Q(summary_cache__icontains=keyword)
+                    | Q(body_markdown_cache__icontains=keyword),
+                    then=Value(1),
+                ),
+                default=Value(0),
+                output_field=IntegerField(),
+            )
+        queryset = queryset.annotate(text_match_score=text_match_score)
+    else:
+        queryset = queryset.annotate(
+            text_match_score=Value(0, output_field=IntegerField())
+        )
+
+    return queryset.filter(
+        Q(shared_tag_count__gt=0)
+        | Q(shared_wiki_document_count__gt=0)
+        | Q(text_match_score__gt=0)
+    ).order_by(
+        "-shared_wiki_document_count",
+        "-shared_tag_count",
+        "-text_match_score",
+        "-comment_count",
+        "-like_count",
+        "-created_at",
+        "-id",
     )
 
 
@@ -1094,9 +1183,16 @@ def _build_community_detail_context(
     post.is_liked_by_current_user = str(post.pk) in liked_post_ids
     post.is_bookmarked_by_current_user = str(post.pk) in bookmarked_post_ids
     _mark_liked_comments(comments, liked_comment_ids)
-    related_posts = list(
-        _community_hot_posts_queryset().exclude(pk=post.pk).filter(~Q(pk=post.pk))[:4]
-    )
+    related_posts = list(_community_related_posts_queryset(post)[:4])
+    if len(related_posts) < 4:
+        fallback_posts = list(
+            _community_hot_posts_queryset()
+            .exclude(pk=post.pk)
+            .exclude(pk__in=[related_post.pk for related_post in related_posts])[
+                : 4 - len(related_posts)
+            ]
+        )
+        related_posts.extend(fallback_posts)
     _attach_linked_wiki_documents(related_posts)
     post_edit_form = post_edit_form or PostForm(
         initial=_build_post_form_initial_from_post(post),

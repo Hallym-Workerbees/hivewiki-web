@@ -1700,6 +1700,18 @@ def admin_tag_edit_modal(request, tag_id):
 @admin_required
 def admin_source_edit_modal(request, source_id):
     source = get_object_or_404(Source, pk=source_id)
+    if request.method == "POST" and request.POST.get("action") == "delete":
+        source_name = source.name
+        source.delete()
+        messages.success(
+            request,
+            (
+                f"소스 '{source_name}'를 삭제했습니다. "
+                "연결된 수집 문서와 ingestion job도 함께 제거되었습니다."
+            ),
+        )
+        return _htmx_refresh_response()
+
     form = SourceForm(request.POST or None, instance=source)
     if request.method == "POST" and form.is_valid():
         saved_source = form.save(commit=False)

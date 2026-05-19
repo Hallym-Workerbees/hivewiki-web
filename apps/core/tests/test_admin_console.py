@@ -13,7 +13,7 @@ from apps.accounts.models import (
     UserStatus,
 )
 from apps.accounts.services import SESSION_USER_ID_KEY
-from apps.core.models import Source, Tag, TagType
+from apps.core.models import IngestionJob, Source, SourceDocument, Tag, TagType
 
 
 @override_settings(
@@ -452,6 +452,7 @@ class AdminConsoleTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'data-local-datetime-input="true"')
         self.assertContains(response, 'step="60"')
+        self.assertContains(response, 'value="2026-05-02T10:30"')
         self.assertContains(response, "data-local-datetime-source=")
         self.assertContains(response, "2026-05-02T01:30+00:00")
 
@@ -479,6 +480,7 @@ class AdminConsoleTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'value="2026-05-02T10:30"')
         self.assertContains(response, "2026-05-02T01:30+00:00")
         self.assertNotContains(response, "2026-05-02T01:30:02+00:00")
 
@@ -538,6 +540,74 @@ class AdminConsoleTests(TestCase):
         self.assertEqual(source.target_url, "https://example.com/rss")
         self.assertTrue(source.enabled)
         self.assertEqual(source.poll_interval_minutes, 45)
+
+    def test_admin_can_delete_source_and_related_ingestion_records(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        source = Source.objects.create(
+            name="삭제 대상 소스",
+            target_url="https://example.com/remove-me",
+            enabled=True,
+            poll_interval_minutes=30,
+            next_poll_at=timezone.now(),
+            updated_at=timezone.now(),
+        )
+        document = SourceDocument.objects.create(
+            source=source,
+            canonical_url="https://example.com/remove-me/doc-1",
+            title="삭제 대상 문서",
+        )
+        IngestionJob.objects.create(source_document=document, status="QUEUED")
+        self._login(admin_user)
+
+        response = self.client.post(
+            f"/dashboard/admin/sources/{source.id}/edit/",
+            {"action": "delete"},
+            HTTP_HX_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response.headers.get("HX-Refresh"), "true")
+        self.assertFalse(Source.objects.filter(pk=source.pk).exists())
+        self.assertFalse(SourceDocument.objects.filter(pk=document.pk).exists())
+        self.assertEqual(IngestionJob.objects.count(), 0)
+
+    def test_admin_source_delete_success_message_is_rendered_on_ingestion_page(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        source = Source.objects.create(
+            name="메시지 소스",
+            target_url="https://example.com/message-me",
+            enabled=True,
+            poll_interval_minutes=30,
+            next_poll_at=timezone.now(),
+            updated_at=timezone.now(),
+        )
+        self._login(admin_user)
+
+        self.client.post(
+            f"/dashboard/admin/sources/{source.id}/edit/",
+            {"action": "delete"},
+            HTTP_HX_REQUEST="true",
+        )
+        response = self.client.get("/dashboard/admin/ingestion/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            "소스 &#x27;메시지 소스&#x27;를 삭제했습니다. 연결된 수집 문서와 ingestion job도 함께 제거되었습니다.",
+            html=False,
+        )
 
     def test_admin_ingestion_management_shows_verbose_status(self):
         admin_user = HiveUser.objects.create(

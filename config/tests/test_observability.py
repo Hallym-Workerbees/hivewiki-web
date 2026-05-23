@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 
 from config.observability import record_http_request, reset_metrics
 
@@ -86,3 +86,15 @@ class ObservabilityViewsTests(SimpleTestCase):
         self.client.get("/metrics/")
 
         self.assertEqual(run_readiness_checks.call_count, 1)
+
+    @override_settings(
+        SECURE_SSL_REDIRECT=True,
+        ALLOWED_HOSTS=["testserver"],
+    )
+    @patch("config.observability.run_readiness_checks")
+    def test_metrics_view_is_exempt_from_ssl_redirect(self, run_readiness_checks):
+        run_readiness_checks.return_value = {"database": True, "cache": True}
+
+        response = self.client.get("/metrics/")
+
+        self.assertEqual(response.status_code, 200)

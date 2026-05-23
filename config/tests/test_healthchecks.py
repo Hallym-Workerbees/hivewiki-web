@@ -1,7 +1,8 @@
+from unittest.mock import patch
+
 from django.http import HttpResponse
 from django.test import RequestFactory, SimpleTestCase, override_settings
 from django.urls import path
-from unittest.mock import patch
 
 from config.healthchecks import HealthcheckHostNormalizationMiddleware
 from config.observability import metrics_view

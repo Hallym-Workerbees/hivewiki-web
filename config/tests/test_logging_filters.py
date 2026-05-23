@@ -51,6 +51,19 @@ class SuppressHealthcheckAccessLogsFilterTests(SimpleTestCase):
 
         self.assertFalse(self.filter.filter(record))
 
+    def test_suppresses_uvicorn_access_log_for_metrics(self):
+        record = logging.LogRecord(
+            name="uvicorn.access",
+            level=logging.INFO,
+            pathname=__file__,
+            lineno=1,
+            msg='%s - "%s %s HTTP/%s" %d',
+            args=("127.0.0.1:54321", "GET", "/metrics/", "1.1", 200),
+            exc_info=None,
+        )
+
+        self.assertFalse(self.filter.filter(record))
+
     def test_suppresses_django_server_access_log_for_healthcheck(self):
         record = logging.LogRecord(
             name="django.server",
@@ -86,6 +99,20 @@ class SuppressHealthcheckAccessLogsFilterTests(SimpleTestCase):
             lineno=1,
             msg='%s - "%s %s HTTP/%s" %d',
             args=("127.0.0.1:54321", "GET", "/livez/", "1.1", 200),
+            exc_info=None,
+        )
+
+        self.assertTrue(self.filter.filter(record))
+
+    @override_settings(DJANGO_LOG_HEALTHCHECKS=True)
+    def test_can_enable_metrics_access_logs(self):
+        record = logging.LogRecord(
+            name="uvicorn.access",
+            level=logging.INFO,
+            pathname=__file__,
+            lineno=1,
+            msg='%s - "%s %s HTTP/%s" %d',
+            args=("127.0.0.1:54321", "GET", "/metrics/", "1.1", 200),
             exc_info=None,
         )
 

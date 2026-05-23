@@ -17,7 +17,7 @@ _request_context: contextvars.ContextVar[dict[str, object] | None] = (
         default=None,
     )
 )
-HEALTHCHECK_PATHS = frozenset(("/livez/", "/readyz/"))
+OBSERVABILITY_PATHS = frozenset(("/livez/", "/readyz/", "/metrics/"))
 ACCESS_LOGGER_NAMES = frozenset(("django.server", "hivewiki.request", "uvicorn.access"))
 
 
@@ -42,11 +42,11 @@ def _normalize_path(path: str | None) -> str:
     return normalized_path
 
 
-def is_healthcheck_path(path: str | None) -> bool:
-    return _normalize_path(path) in HEALTHCHECK_PATHS
+def is_observability_path(path: str | None) -> bool:
+    return _normalize_path(path) in OBSERVABILITY_PATHS
 
 
-def should_log_healthcheck_requests() -> bool:
+def should_log_observability_requests() -> bool:
     return getattr(settings, "DJANGO_LOG_HEALTHCHECKS", False)
 
 
@@ -69,14 +69,14 @@ class RequestContextFilter(logging.Filter):
 
 class SuppressHealthcheckAccessLogsFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
-        if should_log_healthcheck_requests():
+        if should_log_observability_requests():
             return True
 
         if record.name not in ACCESS_LOGGER_NAMES:
             return True
 
         path = self._get_path(record)
-        if not is_healthcheck_path(path):
+        if not is_observability_path(path):
             return True
 
         if record.name == "hivewiki.request":
@@ -216,7 +216,7 @@ class RequestLoggingMiddleware:
             status_code=response.status_code,
             duration_seconds=duration_seconds,
         )
-        if should_log_healthcheck_requests() or not is_healthcheck_path(
+        if should_log_observability_requests() or not is_observability_path(
             request.path_info
         ):
             self.logger.info("request_complete")

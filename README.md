@@ -112,7 +112,7 @@ Commit message는 **영어로 작성해야 하며**, Conventional Commits 규칙
 - `DJANGO_X_FRAME_OPTIONS`: `X-Frame-Options` 값. 기본 `DENY`
 - `DJANGO_LOG_LEVEL`: 애플리케이션 로그 레벨. 기본 `INFO`
 - `DJANGO_LOG_JSON`: JSON 구조화 로그 사용 여부. 기본 `True`
-- `DJANGO_LOG_HEALTHCHECKS`: `/livez/`, `/readyz/` access 로그 출력 여부. 기본 `False`
+- `DJANGO_LOG_HEALTHCHECKS`: `/livez/`, `/readyz/`, `/metrics/` access 로그 출력 여부. 기본 `False`
 - `DJANGO_SECURE_PROXY_SSL_HEADER`: 프록시 뒤에서 HTTPS 판별에 사용할 헤더
   예: `HTTP_X_FORWARDED_PROTO,https`
 - `SESSION_COOKIE_AGE`: 세션 유지 시간. 초 단위

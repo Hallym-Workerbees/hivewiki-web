@@ -41,7 +41,7 @@ scrape_configs:
 
 Prometheus가 각 Pod를 개별 target으로 scrape 해야 합니다. 외부 Load Balancer나 Ingress 주소 하나만 scrape 하면 Pod별 상태와 집계가 정확하지 않을 수 있습니다.
 
-이 애플리케이션은 `/metrics/`, `/livez/`, `/readyz/`를 HTTPS redirect 예외로 처리합니다. 대신 내부 Service DNS나 scrape host를 사용할 경우 해당 host가 `DJANGO_ALLOWED_HOSTS`에 포함되어 있어야 합니다.
+이 애플리케이션은 `/metrics/`, `/livez/`, `/readyz/`를 HTTPS redirect 예외로 처리합니다. 또한 `/metrics/`는 host validation 전에 처리되므로 Pod IP 기반 scrape도 가능합니다.
 
 권장 방식:
 

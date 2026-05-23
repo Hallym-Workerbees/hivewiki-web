@@ -2,13 +2,14 @@ import ipaddress
 
 from django.conf import settings
 
-from config.observability import liveness_probe, readiness_probe
+from config.observability import liveness_probe, metrics_view, readiness_probe
 
 HEALTHCHECK_PATHS = frozenset(("/livez/", "/readyz/"))
 ELB_HEALTHCHECK_USER_AGENT_PREFIX = "ELB-HealthChecker/"
 HEALTHCHECK_VIEWS = {
     "/livez/": liveness_probe,
     "/readyz/": readiness_probe,
+    "/metrics/": metrics_view,
 }
 
 

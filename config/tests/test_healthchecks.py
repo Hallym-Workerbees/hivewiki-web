@@ -1,8 +1,11 @@
+from unittest.mock import patch
+
 from django.http import HttpResponse
 from django.test import RequestFactory, SimpleTestCase, override_settings
 from django.urls import path
 
 from config.healthchecks import HealthcheckHostNormalizationMiddleware
+from config.observability import metrics_view
 
 
 def ok_view(_request):
@@ -11,6 +14,7 @@ def ok_view(_request):
 
 urlpatterns = [
     path("livez/", ok_view),
+    path("metrics/", metrics_view),
     path("dashboard/", ok_view),
 ]
 
@@ -64,3 +68,16 @@ class HealthcheckHostNormalizationMiddlewareTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.content.decode(), "ok\n")
+
+    @patch("config.observability.run_readiness_checks")
+    def test_metrics_is_short_circuited_before_host_validation(
+        self, run_readiness_checks
+    ):
+        run_readiness_checks.return_value = {"database": True, "cache": True}
+
+        response = self.client.get(
+            "/metrics/",
+            HTTP_HOST="10.0.0.42:8000",
+        )
+
+        self.assertEqual(response.status_code, 200)

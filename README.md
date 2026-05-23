@@ -222,6 +222,25 @@ OAuth callback URL은 현재 요청의 host/scheme를 기준으로 서버에서 
 
 HTTP 메트릭의 `route` 라벨은 가능한 경우 raw path 대신 Django route pattern 기준으로 집계해 path parameter로 인한 cardinality 증가를 줄입니다.
 
+### Prometheus / Grafana 구성 가이드
+
+이 저장소에는 아래 예시 파일이 포함되어 있습니다.
+
+- `docs/observability/prometheus-scrape.example.yml`
+- `docs/observability/grafana-dashboard-hivewiki-overview.json`
+- `docs/observability/README.md`
+
+경우별 운영 원칙은 아래와 같습니다.
+
+- 단일 인스턴스 또는 단일 컨테이너
+  `GET /metrics/`를 해당 인스턴스 주소로 직접 scrape 하면 됩니다.
+- Kubernetes에서 Pod가 여러 개
+  외부 LB나 Ingress 주소 하나를 scrape하지 말고, Prometheus가 각 Pod endpoint를 개별 target으로 발견하도록 설정해야 합니다.
+- 한 Pod 안에 worker 프로세스가 여러 개
+  `PROMETHEUS_MULTIPROC_DIR`를 설정해 Pod 내부 프로세스 메트릭도 합산해야 합니다.
+
+여러 Pod 메트릭의 "클러스터 전체 집계"는 애플리케이션이 직접 하는 것이 아니라 Prometheus 쿼리에서 수행합니다. 예를 들어 전체 요청량은 `sum(rate(hivewiki_http_requests_total[5m]))`처럼 계산합니다.
+
 ## 배포 시 권장값
 
 배포 환경에서는 최소한 아래 값들을 권장합니다.

@@ -117,6 +117,8 @@ Commit message는 **영어로 작성해야 하며**, Conventional Commits 규칙
   예: `HTTP_X_FORWARDED_PROTO,https`
 - `SESSION_COOKIE_AGE`: 세션 유지 시간. 초 단위
 
+`/livez/`, `/readyz/`, `/metrics/`는 인프라용 엔드포인트라 `DJANGO_SECURE_SSL_REDIRECT=True`여도 HTTPS redirect 예외로 처리됩니다. 다만 Kubernetes 등에서 내부 Service 주소로 scrape 하려면 `DJANGO_ALLOWED_HOSTS`에 해당 내부 host도 함께 포함해야 합니다.
+
 브라우저 timezone은 별도 엔드포인트 `POST /auth/timezone/`를 통해 세션 키 `django_timezone`에 저장됩니다. 이 값은 로그인/로그아웃 과정에서 세션이 재설정되어도 유지되며, 서버는 이를 사용해 사용자별 시간대를 활성화하고 클라이언트는 timezone-sensitive UI를 로컬 시간대로 다시 렌더링합니다.
 
 ### 로깅

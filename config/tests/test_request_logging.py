@@ -3,8 +3,6 @@ from django.http import HttpResponse, StreamingHttpResponse
 from django.test import AsyncClient, SimpleTestCase, override_settings
 from django.urls import path
 
-from config.logging import RequestLoggingMiddleware
-
 
 async def async_request_id_view(request):
     return HttpResponse(request.request_id, content_type="text/plain")

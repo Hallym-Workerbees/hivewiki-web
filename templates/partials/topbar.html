@@ -6,7 +6,7 @@
         <div class="flex items-center gap-3 md:gap-4">
             {% if not hide_topbar_search %}
                 <div class="hidden md:block">
-                {% include "partials/search_bar.html" with placeholder="위키 문서를 검색하세요" action=search_action|default:"/search/" %}
+                    {% include "partials/search_bar.html" with placeholder="위키 문서를 검색하세요" action=search_action|default:"/search/" %}
                 </div>
             {% endif %}
             {% if current_user %}

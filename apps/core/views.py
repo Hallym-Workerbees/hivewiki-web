@@ -70,9 +70,7 @@ LIST_TAGS = ["지식", "협업", "캠퍼스"]
 
 def public_main(request):
     featured_post = _community_visible_posts_queryset(user=None).first()
-    featured_wiki = _build_wiki_card_items(
-        _community_wiki_document_queryset()[:1]
-    )
+    featured_wiki = _build_wiki_card_items(_community_wiki_document_queryset()[:1])
     return render(
         request,
         "pages/home/public_main.html",
@@ -98,10 +96,14 @@ def dashboard(request):
         status=WikiDocumentStatus.PUBLISHED,
         current_revision__isnull=False,
     ).count()
-    tag_count = Tag.objects.filter(
-        posts__status=PostStatus.PUBLISHED,
-        posts__deleted_at__isnull=True,
-    ).distinct().count()
+    tag_count = (
+        Tag.objects.filter(
+            posts__status=PostStatus.PUBLISHED,
+            posts__deleted_at__isnull=True,
+        )
+        .distinct()
+        .count()
+    )
     return render(
         request,
         "pages/home/dashboard.html",

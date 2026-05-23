@@ -4,37 +4,39 @@
 {% endblock title %}
 {% block app_content %}
     <section class="mx-auto max-w-7xl space-y-12">
-        <section class="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-            <div class="rounded-[2rem] bg-surface-container-low p-8">
-                <div class="text-sm font-semibold text-primary">Dashboard</div>
-                <h1 class="mt-2 font-headline text-5xl font-black tracking-tight">오늘의 지식 흐름</h1>
-                <p class="mt-4 max-w-2xl text-sm leading-7 text-on-surface-variant">
-                    자주 찾는 문서와 최근 논의를 한 화면에서 확인하고, 바로 검색으로 이어갈 수 있습니다.
-                </p>
-                <div class="mt-8 max-w-2xl">
-                    {% include "partials/search_bar.html" with placeholder="위키 문서를 검색하세요" action="/search/" target="#dashboard-search-results" push_url="false" %}
+        <section class="rounded-[2rem] bg-surface-container-low p-8">
+            <div class="max-w-4xl">
+                <h1 class="font-headline text-5xl font-black tracking-tight">대시보드</h1>
+                <div class="mt-6 max-w-3xl">
+                    {% include "partials/search_bar.html" with placeholder="검색" action="/search/" target="#dashboard-search-results" push_url="false" %}
                 </div>
             </div>
-            <div class="grid gap-4">
-                {% include "partials/stat_tile.html" with label="문서" value="128" description="현재 위키에 정리된 문서 수" %}
-                {% include "partials/stat_tile.html" with label="질문" value="42" description="이번 주에 새로 축적된 커뮤니티 스레드 수" %}
-                {% include "partials/stat_tile.html" with label="연결" value="16" description="커뮤니티와 위키 사이의 최신 연결 수" %}
+            <div class="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {% for stat in dashboard_stats %}
+                    {% include "partials/stat_tile.html" with label=stat.label value=stat.value description=stat.description %}
+                {% endfor %}
             </div>
         </section>
         <div id="dashboard-search-results"></div>
         <section class="space-y-5">
-            {% include "partials/section_header.html" with eyebrow="Wiki" title="최신 위키" description="최근 업데이트된 문서를 빠르게 훑어볼 수 있습니다." href="/wiki/" link_text="전체 보기" %}
+            {% include "partials/section_header.html" with eyebrow="Wiki" title="최신 위키" description="최근 업데이트된 문서" href="/wiki/" link_text="전체 보기" %}
             <div class="grid gap-5 lg:grid-cols-2">
                 {% for item in wiki_items %}
                     {% include "partials/wiki_card.html" %}
+                {% empty %}
+                    <div class="lg:col-span-2">
+                        {% include "partials/empty_state.html" with title="표시할 위키 문서가 없습니다" description="공개된 위키 문서가 생기면 이 영역에 표시됩니다." %}
+                    </div>
                 {% endfor %}
             </div>
         </section>
         <section class="space-y-5">
-            {% include "partials/section_header.html" with eyebrow="Community" title="최신 커뮤니티 글" description="최근 올라온 질문과 논의를 확인하고 필요한 문서를 찾아보세요." href="/community/" link_text="전체 보기" %}
+            {% include "partials/section_header.html" with eyebrow="Community" title="최신 커뮤니티 글" description="최근 게시글" href="/community/" link_text="전체 보기" %}
             <div class="space-y-5">
                 {% for item in post_items %}
                     {% include "partials/post_card.html" %}
+                {% empty %}
+                    {% include "partials/empty_state.html" with title="표시할 게시글이 없습니다" description="공개된 커뮤니티 게시글이 생기면 이 영역에 표시됩니다." %}
                 {% endfor %}
             </div>
         </section>

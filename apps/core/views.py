@@ -67,64 +67,42 @@ ADMIN_WIKI_ACTIONS = frozenset({"publish", "archive", "delete"})
 
 LIST_TAGS = ["지식", "협업", "캠퍼스"]
 
-FEATURED_WIKI = [
-    {
-        "category": "문서",
-        "updated_at": "5분 전",
-        "title": "캡스톤 위키 운영 가이드",
-        "summary": "프로젝트 문서를 어떻게 축적하고 연결할지에 대한 기본 원칙과 운영 흐름을 정리한 문서입니다.",
-        "tags": ["운영", "가이드", "온보딩"],
-        "url": "/wiki/",
-    },
-    {
-        "category": "요약",
-        "updated_at": "오늘",
-        "title": "커뮤니티 질문을 문서로 전환하는 기준",
-        "summary": "질문, 답변, 회고를 어떤 조건에서 위키 문서로 승격할지에 대한 실무 기준을 정리합니다.",
-        "tags": ["정책", "정리", "문서화"],
-        "url": "/wiki/",
-    },
-]
-
-FEATURED_POSTS = [
-    {
-        "author": "제품팀",
-        "created_at": "방금 전",
-        "title": "이번 주에 문서화가 필요한 이슈를 모아봅시다",
-        "summary": "흩어진 질문과 답변을 한 번에 정리하기 위한 스레드입니다. 커뮤니티와 위키의 연결 지점을 찾는 용도입니다.",
-        "tags": ["질문", "정리", "협업"],
-        "comment_count": "8",
-        "url": "/community/",
-    },
-    {
-        "author": "운영자",
-        "created_at": "1시간 전",
-        "title": "검색 첫 화면에서 필요한 정보 구조 의견 받습니다",
-        "summary": "사용자가 무엇을 먼저 보게 해야 하는지, 최신 문서와 커뮤니티 글의 비중은 어느 정도가 적절한지 논의합니다.",
-        "tags": ["검색", "UX", "피드백"],
-        "comment_count": "14",
-        "url": "/community/",
-    },
-]
-
 
 def public_main(request):
-    featured_posts = list(_community_visible_posts_queryset(user=None)[:1])
+    featured_post = _community_visible_posts_queryset(user=None).first()
+    featured_wiki = _build_wiki_card_items(_community_wiki_document_queryset()[:1])
     return render(
         request,
         "pages/home/public_main.html",
         {
             "list_tags": LIST_TAGS,
-            "featured_wiki": FEATURED_WIKI[0],
-            "featured_post": featured_posts[0] if featured_posts else FEATURED_POSTS[0],
+            "featured_wiki": featured_wiki[0] if featured_wiki else None,
+            "featured_post": featured_post,
         },
     )
 
 
 @login_required
 def dashboard(request):
+    wiki_documents = list(_community_wiki_document_queryset()[:4])
     recent_posts = list(
         _community_visible_posts_queryset(user=request.current_user)[:2]
+    )
+    post_count = Post.objects.filter(
+        status=PostStatus.PUBLISHED,
+        deleted_at__isnull=True,
+    ).count()
+    wiki_count = WikiDocument.objects.filter(
+        status=WikiDocumentStatus.PUBLISHED,
+        current_revision__isnull=False,
+    ).count()
+    tag_count = (
+        Tag.objects.filter(
+            posts__status=PostStatus.PUBLISHED,
+            posts__deleted_at__isnull=True,
+        )
+        .distinct()
+        .count()
     )
     return render(
         request,
@@ -132,8 +110,26 @@ def dashboard(request):
         {
             "page_heading": "Dashboard",
             "list_tags": LIST_TAGS,
-            "wiki_items": FEATURED_WIKI,
-            "post_items": recent_posts or FEATURED_POSTS,
+            "wiki_items": _build_wiki_card_items(wiki_documents),
+            "post_items": recent_posts,
+            "hide_topbar_search": True,
+            "dashboard_stats": [
+                {
+                    "label": "문서",
+                    "value": wiki_count,
+                    "description": "공개된 위키 문서 수",
+                },
+                {
+                    "label": "게시글",
+                    "value": post_count,
+                    "description": "공개된 커뮤니티 게시글 수",
+                },
+                {
+                    "label": "태그",
+                    "value": tag_count,
+                    "description": "커뮤니티에서 사용 중인 태그 수",
+                },
+            ],
         },
     )
 
@@ -592,6 +588,7 @@ def wiki_home(request):
         "query": query,
         "wiki_items": search_results["items"],
         "wiki_result_count": search_results["total_count"],
+        "hide_topbar_search": True,
     }
     if request.headers.get("HX-Request") == "true":
         return render(request, "partials/wiki_search_results.html", context)
@@ -787,6 +784,7 @@ def integrated_search(request):
             "post_items": post_search_results["items"],
             "post_result_count": post_search_results["total_count"],
             "show_blank_query_state": is_htmx_request and not query,
+            "hide_topbar_search": True,
         },
     )
 
@@ -985,6 +983,20 @@ def _community_wiki_document_queryset():
         status=WikiDocumentStatus.PUBLISHED,
         current_revision__isnull=False,
     ).order_by("-updated_at", "title")
+
+
+def _build_wiki_card_items(documents):
+    return [
+        {
+            "category": "문서",
+            "updated_at": document.updated_at,
+            "title": document.title,
+            "summary": document.summary,
+            "tags": [],
+            "url": reverse("wiki_detail", kwargs={"slug": document.slug}),
+        }
+        for document in documents
+    ]
 
 
 def _get_selected_wiki_documents(selected_wiki_document_ids):

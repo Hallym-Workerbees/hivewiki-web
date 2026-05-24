@@ -8,7 +8,7 @@
             <div class="rounded-[2rem] bg-surface-container-low p-6 sm:p-8">
                 <div class="border-b border-outline-variant/70 pb-5">
                     <div class="text-sm font-semibold text-primary">Community Feed</div>
-                    <h1 class="mt-2 font-headline text-4xl font-black tracking-tight">짧은 질문과 맥락을 바로 남기는 공간</h1>
+                    <h1 class="mt-2 font-headline text-4xl font-black tracking-tight">커뮤니티 글</h1>
                 </div>
                 <div class="mt-6 flex flex-wrap gap-2">
                     <a href="{% url 'community_list' %}"
@@ -59,7 +59,6 @@
                         {% endfor %}
                     </div>
                 </section>
-                {% include "partials/feature_panel.html" with eyebrow="Guide" title="피드에서 문서화로" description="반복 질문은 태그를 붙여 두면 이후 위키로 묶어내기 쉽습니다." cta_href="/wiki/" cta_label="위키 열기" %}
             </aside>
         </div>
     </section>

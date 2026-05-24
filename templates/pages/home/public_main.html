@@ -7,19 +7,19 @@
         <div class="grid gap-12 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
             <div class="min-w-0">
                 <div class="mb-5 inline-flex rounded-full bg-secondary-container px-3 py-1 text-xs font-bold text-on-secondary-container">
-                    Workerbees Wiki
+                    HiveWiki
                 </div>
                 <h1 class="max-w-4xl font-headline text-5xl font-black tracking-tight text-on-surface lg:text-7xl">
-                    학교 공동체의 지식을 살아 있는 아카이브로
+                    문서와 커뮤니티 글을 함께 탐색하는 공간
                 </h1>
                 <p class="mt-6 max-w-2xl text-base leading-8 text-on-surface-variant lg:text-lg">
-                    HiveWiki는 커뮤니티 글과 문서를 분리하지 않고, 검색과 연결을 통해 함께 축적되는 지식 경험을 지향합니다.
+                    최근 문서와 게시글을 확인하고, 필요한 내용을 검색하거나 바로 커뮤니티로 이동할 수 있습니다.
                 </p>
                 <div class="mt-8 flex flex-wrap gap-3">
                     <a href="{% url 'signup' %}"
-                       class="rounded-xl bg-primary-container px-5 py-3 text-sm font-bold text-on-primary-container">지금 시작하기</a>
+                       class="rounded-xl bg-primary-container px-5 py-3 text-sm font-bold text-on-primary-container">회원가입</a>
                     <a href="{% url 'wiki_home' %}"
-                       class="rounded-xl bg-surface-container-low px-5 py-3 text-sm font-semibold text-primary">문서 둘러보기</a>
+                       class="rounded-xl bg-surface-container-low px-5 py-3 text-sm font-semibold text-primary">위키 보기</a>
                 </div>
                 <div class="mt-10 max-w-2xl">
                     {% include "partials/search_bar.html" with placeholder="궁금한 문서나 게시글을 검색해보세요" action="/search/" target="#preview-results" push_url="false" %}
@@ -28,8 +28,16 @@
             </div>
             <div class="rounded-[2rem] bg-surface-container-low p-6 lg:p-8">
                 <div class="grid gap-4">
-                    {% include "partials/wiki_card.html" with item=featured_wiki %}
-                    {% include "partials/post_card.html" with item=featured_post preview_mode=True %}
+                    {% if featured_wiki %}
+                        {% include "partials/wiki_card.html" with item=featured_wiki %}
+                    {% else %}
+                        {% include "partials/empty_state.html" with title="표시할 위키 문서가 없습니다" description="공개된 위키 문서가 생기면 이 영역에 표시됩니다." %}
+                    {% endif %}
+                    {% if featured_post %}
+                        {% include "partials/post_card.html" with item=featured_post preview_mode=True %}
+                    {% else %}
+                        {% include "partials/empty_state.html" with title="표시할 게시글이 없습니다" description="공개된 커뮤니티 게시글이 생기면 이 영역에 표시됩니다." %}
+                    {% endif %}
                 </div>
             </div>
         </div>

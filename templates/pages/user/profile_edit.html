@@ -4,7 +4,7 @@
 {% endblock title %}
 {% block app_content %}
     <section class="mx-auto max-w-5xl space-y-8">
-        {% include "partials/section_header.html" with eyebrow="Profile" title="프로필 수정" description="닉네임과 이메일을 정리하고, 프로필 이미지는 파일 업로드로 변경할 수 있습니다." %}
+        {% include "partials/section_header.html" with eyebrow="Profile" title="프로필 수정" description="계정 정보 수정" %}
         <div class="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
             <section class="rounded-[2rem] bg-surface-container-low p-8">
                 <div class="text-xs uppercase tracking-[0.24em] text-stone-400">Preview</div>
@@ -35,12 +35,6 @@
                         <p class="mt-2 text-sm text-on-surface-variant">{{ form.instance.email }}</p>
                     </div>
                 </div>
-                <div class="mt-8 rounded-[1.5rem] bg-white p-5">
-                    <div class="text-sm font-semibold text-on-surface">이미지 업로드 안내</div>
-                    <p class="mt-2 text-sm leading-7 text-on-surface-variant">
-                        JPG, PNG, WebP 이미지를 최대 5MB까지 업로드할 수 있습니다. 업로드가 완료되면 저장 시 프로필에 반영됩니다.
-                    </p>
-                </div>
             </section>
             <section class="rounded-[2rem] bg-surface-container-low p-8">
                 <form method="post" class="space-y-6" data-profile-edit-form>
@@ -53,7 +47,6 @@
                         <div>
                             <label class="text-sm font-semibold text-on-surface"
                                    for="profile-image-file">프로필 이미지</label>
-                            <p class="mt-1 text-sm text-on-surface-variant">URL 대신 파일을 올리면 자동으로 S3에 업로드됩니다.</p>
                         </div>
                         <div class="flex flex-wrap items-center gap-3">
                             <input id="profile-image-file"

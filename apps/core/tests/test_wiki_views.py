@@ -1,4 +1,5 @@
 from django.test import TestCase, override_settings
+from django.urls import reverse
 from django.utils import timezone
 
 from apps.core.models import (
@@ -16,6 +17,14 @@ from apps.core.models import (
             "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
             "LOCATION": "hivewiki-wiki-test-cache",
         }
+    },
+    STORAGES={
+        "default": {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+        },
+        "staticfiles": {
+            "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        },
     },
 )
 class WikiViewTests(TestCase):
@@ -194,6 +203,41 @@ def promote_question_to_wiki(question, chunks):
 
         self.assertEqual(home_response.status_code, 200)
         self.assertEqual(detail_response.status_code, 200)
+
+    def test_wiki_pages_support_unicode_slugs(self):
+        document = WikiDocument.objects.create(
+            title="2026 2학기 학사신청 전공배정 소속변경 및 복수전공 안내",
+            slug="2026-2학기-학사신청전공배정-소속변경-및-복수전공-안내",
+            summary="한글 슬러그 문서입니다.",
+            status=WikiDocumentStatus.PUBLISHED,
+            updated_at=timezone.now(),
+        )
+        revision = WikiRevision.objects.create(
+            wiki_document=document,
+            revision_number=1,
+            content_markdown="## 신청 안내",
+            generation_type=WikiGenerationType.AI,
+            generation_model="gpt-5.5",
+        )
+        document.current_revision = revision
+        document.save(update_fields=["current_revision"])
+
+        detail_url = reverse("wiki_detail", kwargs={"slug": document.slug})
+        bookmark_url = reverse("wiki_bookmark_toggle", kwargs={"slug": document.slug})
+
+        self.assertEqual(
+            detail_url,
+            "/wiki/2026-2%ED%95%99%EA%B8%B0-%ED%95%99%EC%82%AC%EC%8B%A0%EC%B2%AD%EC%A0%84%EA%B3%B5%EB%B0%B0%EC%A0%95-%EC%86%8C%EC%86%8D%EB%B3%80%EA%B2%BD-%EB%B0%8F-%EB%B3%B5%EC%88%98%EC%A0%84%EA%B3%B5-%EC%95%88%EB%82%B4/",
+        )
+        self.assertEqual(
+            bookmark_url,
+            "/wiki/2026-2%ED%95%99%EA%B8%B0-%ED%95%99%EC%82%AC%EC%8B%A0%EC%B2%AD%EC%A0%84%EA%B3%B5%EB%B0%B0%EC%A0%95-%EC%86%8C%EC%86%8D%EB%B3%80%EA%B2%BD-%EB%B0%8F-%EB%B3%B5%EC%88%98%EC%A0%84%EA%B3%B5-%EC%95%88%EB%82%B4/bookmark/",
+        )
+
+        response = self.client.get(detail_url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "신청 안내")
 
     def test_wiki_detail_requires_current_revision_for_published_document(self):
         WikiDocument.objects.create(

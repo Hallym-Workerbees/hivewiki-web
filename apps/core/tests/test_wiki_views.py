@@ -3,10 +3,15 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.core.models import (
+    ChunkEmbedding,
+    Source,
+    SourceChunk,
+    SourceDocument,
     WikiDocument,
     WikiDocumentStatus,
     WikiGenerationType,
     WikiRevision,
+    WikiRevisionSource,
 )
 
 
@@ -28,6 +33,10 @@ from apps.core.models import (
     },
 )
 class WikiViewTests(TestCase):
+    @staticmethod
+    def _embedding(first_value, second_value):
+        return [first_value] * 768 + [second_value] * 768
+
     def test_wiki_home_links_to_detail_page(self):
         document = WikiDocument.objects.create(
             title="캡스톤 위키 운영 가이드",
@@ -93,6 +102,268 @@ class WikiViewTests(TestCase):
         self.assertContains(response, 'data-copy-success-text="링크 복사됨!"')
         self.assertContains(response, 'id="human-copy"')
         self.assertNotContains(response, 'style="')
+
+    def test_wiki_detail_formats_inline_sources_as_citations(self):
+        document = WikiDocument.objects.create(
+            title="수강신청 변경 안내",
+            slug="course-change-guide",
+            summary="수강신청 변경 기간 안내 문서입니다.",
+            status=WikiDocumentStatus.PUBLISHED,
+            updated_at=timezone.now(),
+        )
+        revision = WikiRevision.objects.create(
+            wiki_document=document,
+            revision_number=1,
+            content_markdown=(
+                "수강신청 변경은 2026년 3월 3일 오전 10시부터 3월 9일 오후 3시까지 진행된다"
+                "출처: [2026학년도 1학기 수강신청 변경 기간 안내](https://example.com/course-change).\n\n"
+                "휴학생은 신청이 불가능하다"
+                "출처: [2026학년도 1학기 수강신청 변경 기간 안내](https://example.com/course-change)."
+            ),
+            generation_type=WikiGenerationType.AI,
+            generation_model="gpt-5.5",
+        )
+        document.current_revision = revision
+        document.save(update_fields=["current_revision"])
+
+        response = self.client.get("/wiki/course-change-guide/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            '<sup class="wiki-citation-marker">[1]</sup>',
+            html=True,
+        )
+        self.assertContains(response, "참고 출처")
+        self.assertContains(response, "2026학년도 1학기 수강신청 변경 기간 안내")
+        self.assertContains(response, "https://example.com/course-change")
+
+    def test_wiki_detail_shows_related_wiki_documents(self):
+        source = Source.objects.create(
+            name="학사 공지",
+            target_url="https://example.com/notices",
+        )
+        source_document = SourceDocument.objects.create(
+            source=source,
+            canonical_url="https://example.com/notices/course-change",
+            title="수강신청 변경 안내 원문",
+            body_text="수강신청 변경과 복수전공 신청 안내",
+        )
+        shared_chunk = SourceChunk.objects.create(
+            source_document=source_document,
+            chunk_index=0,
+            content_text="수강신청 변경 일정과 복수전공 신청 절차",
+        )
+
+        primary_document = WikiDocument.objects.create(
+            title="수강신청 변경 안내",
+            slug="course-change-guide",
+            summary="수강신청 변경 기간 안내 문서입니다.",
+            status=WikiDocumentStatus.PUBLISHED,
+            updated_at=timezone.now(),
+        )
+        primary_revision = WikiRevision.objects.create(
+            wiki_document=primary_document,
+            revision_number=1,
+            content_markdown="## 수강신청 변경",
+            generation_type=WikiGenerationType.AI,
+            generation_model="gpt-5.5",
+        )
+        primary_document.current_revision = primary_revision
+        primary_document.save(update_fields=["current_revision"])
+        WikiRevisionSource.objects.create(
+            wiki_revision=primary_revision,
+            source_chunk=shared_chunk,
+            evidence_text=shared_chunk.content_text,
+        )
+
+        related_document = WikiDocument.objects.create(
+            title="복수전공 신청 안내",
+            slug="double-major-guide",
+            summary="복수전공 신청 절차 문서입니다.",
+            status=WikiDocumentStatus.PUBLISHED,
+            updated_at=timezone.now() + timezone.timedelta(minutes=1),
+        )
+        related_revision = WikiRevision.objects.create(
+            wiki_document=related_document,
+            revision_number=1,
+            content_markdown="## 복수전공 신청",
+            generation_type=WikiGenerationType.AI,
+            generation_model="gpt-5.5",
+        )
+        related_document.current_revision = related_revision
+        related_document.save(update_fields=["current_revision"])
+        WikiRevisionSource.objects.create(
+            wiki_revision=related_revision,
+            source_chunk=shared_chunk,
+            evidence_text=shared_chunk.content_text,
+        )
+
+        unrelated_document = WikiDocument.objects.create(
+            title="기숙사 입사 안내",
+            slug="dormitory-guide",
+            summary="기숙사 입사 절차 문서입니다.",
+            status=WikiDocumentStatus.PUBLISHED,
+            updated_at=timezone.now() - timezone.timedelta(days=1),
+        )
+        unrelated_revision = WikiRevision.objects.create(
+            wiki_document=unrelated_document,
+            revision_number=1,
+            content_markdown="## 기숙사 입사",
+            generation_type=WikiGenerationType.AI,
+            generation_model="gpt-5.5",
+        )
+        unrelated_document.current_revision = unrelated_revision
+        unrelated_document.save(update_fields=["current_revision"])
+
+        response = self.client.get("/wiki/course-change-guide/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "연관 위키")
+        self.assertContains(response, "복수전공 신청 안내")
+        self.assertEqual(
+            response.context["related_wiki_items"][0]["title"],
+            "복수전공 신청 안내",
+        )
+
+    def test_wiki_detail_prioritizes_embedding_similar_documents(self):
+        primary_source = Source.objects.create(
+            name="학사 공지",
+            target_url="https://example.com/notices",
+        )
+        primary_source_document = SourceDocument.objects.create(
+            source=primary_source,
+            canonical_url="https://example.com/notices/course-change",
+            title="수강신청 변경 안내 원문",
+            body_text="수강신청 변경 일정",
+        )
+        primary_chunk = SourceChunk.objects.create(
+            source_document=primary_source_document,
+            chunk_index=0,
+            content_text="수강신청 변경 일정",
+        )
+        ChunkEmbedding.objects.create(
+            source_chunk=primary_chunk,
+            embedding_model="text-embedding-3-small",
+            embedding_dim=1536,
+            embedding=self._embedding(1.0, 0.0),
+        )
+
+        primary_document = WikiDocument.objects.create(
+            title="수강신청 변경 안내",
+            slug="course-change-guide",
+            summary="수강신청 변경 기간 안내 문서입니다.",
+            status=WikiDocumentStatus.PUBLISHED,
+            updated_at=timezone.now(),
+        )
+        primary_revision = WikiRevision.objects.create(
+            wiki_document=primary_document,
+            revision_number=1,
+            content_markdown="## 수강신청 변경",
+            generation_type=WikiGenerationType.AI,
+            generation_model="gpt-5.5",
+        )
+        primary_document.current_revision = primary_revision
+        primary_document.save(update_fields=["current_revision"])
+        WikiRevisionSource.objects.create(
+            wiki_revision=primary_revision,
+            source_chunk=primary_chunk,
+            evidence_text=primary_chunk.content_text,
+        )
+
+        similar_source = Source.objects.create(
+            name="유사 문서 소스",
+            target_url="https://example.com/similar",
+        )
+        similar_source_document = SourceDocument.objects.create(
+            source=similar_source,
+            canonical_url="https://example.com/similar/double-major",
+            title="복수전공 신청 안내 원문",
+            body_text="복수전공 신청 일정",
+        )
+        similar_chunk = SourceChunk.objects.create(
+            source_document=similar_source_document,
+            chunk_index=0,
+            content_text="복수전공 신청 일정",
+        )
+        ChunkEmbedding.objects.create(
+            source_chunk=similar_chunk,
+            embedding_model="text-embedding-3-small",
+            embedding_dim=1536,
+            embedding=self._embedding(0.9, 0.1),
+        )
+        similar_document = WikiDocument.objects.create(
+            title="복수전공 신청 안내",
+            slug="double-major-guide",
+            summary="복수전공 신청 절차 문서입니다.",
+            status=WikiDocumentStatus.PUBLISHED,
+            updated_at=timezone.now(),
+        )
+        similar_revision = WikiRevision.objects.create(
+            wiki_document=similar_document,
+            revision_number=1,
+            content_markdown="## 복수전공 신청",
+            generation_type=WikiGenerationType.AI,
+            generation_model="gpt-5.5",
+        )
+        similar_document.current_revision = similar_revision
+        similar_document.save(update_fields=["current_revision"])
+        WikiRevisionSource.objects.create(
+            wiki_revision=similar_revision,
+            source_chunk=similar_chunk,
+            evidence_text=similar_chunk.content_text,
+        )
+
+        dissimilar_source = Source.objects.create(
+            name="비유사 문서 소스",
+            target_url="https://example.com/dissimilar",
+        )
+        dissimilar_source_document = SourceDocument.objects.create(
+            source=dissimilar_source,
+            canonical_url="https://example.com/dissimilar/dormitory",
+            title="기숙사 입사 안내 원문",
+            body_text="기숙사 입사 절차",
+        )
+        dissimilar_chunk = SourceChunk.objects.create(
+            source_document=dissimilar_source_document,
+            chunk_index=0,
+            content_text="기숙사 입사 절차",
+        )
+        ChunkEmbedding.objects.create(
+            source_chunk=dissimilar_chunk,
+            embedding_model="text-embedding-3-small",
+            embedding_dim=1536,
+            embedding=self._embedding(0.0, 1.0),
+        )
+        dissimilar_document = WikiDocument.objects.create(
+            title="기숙사 입사 안내",
+            slug="dormitory-guide",
+            summary="기숙사 입사 절차 문서입니다.",
+            status=WikiDocumentStatus.PUBLISHED,
+            updated_at=timezone.now() + timezone.timedelta(minutes=3),
+        )
+        dissimilar_revision = WikiRevision.objects.create(
+            wiki_document=dissimilar_document,
+            revision_number=1,
+            content_markdown="## 기숙사 입사",
+            generation_type=WikiGenerationType.AI,
+            generation_model="gpt-5.5",
+        )
+        dissimilar_document.current_revision = dissimilar_revision
+        dissimilar_document.save(update_fields=["current_revision"])
+        WikiRevisionSource.objects.create(
+            wiki_revision=dissimilar_revision,
+            source_chunk=dissimilar_chunk,
+            evidence_text=dissimilar_chunk.content_text,
+        )
+
+        response = self.client.get("/wiki/course-change-guide/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.context["related_wiki_items"][0]["title"],
+            "복수전공 신청 안내",
+        )
 
     def test_wiki_detail_adds_safe_rel_to_links(self):
         document = WikiDocument.objects.create(

@@ -1,4 +1,5 @@
 import logging
+import math
 import re
 from urllib.parse import urlencode
 
@@ -25,6 +26,7 @@ from .community_content import extract_linked_wiki_slugs
 from .forms import CommentForm, PostForm, SourceForm, TagForm
 from .markdown_rendering import get_cached_revision_render
 from .models import (
+    ChunkEmbedding,
     Comment,
     CommentLike,
     IngestionJob,
@@ -41,8 +43,13 @@ from .models import (
     WikiBookmark,
     WikiDocument,
     WikiDocumentStatus,
+    WikiRevisionSource,
 )
-from .search import get_post_search_results, get_wiki_search_results
+from .search import (
+    get_post_search_results,
+    get_wiki_search_queryset,
+    get_wiki_search_results,
+)
 from .wiki_markdown import strip_leading_title_heading
 
 logger = logging.getLogger(__name__)
@@ -52,6 +59,7 @@ ADMIN_CONTENT_WIKI_PAGE_SIZE = 6
 ADMIN_INGESTION_SOURCE_PAGE_SIZE = 6
 ADMIN_INGESTION_DOCUMENT_PAGE_SIZE = 8
 ADMIN_INGESTION_JOB_PAGE_SIZE = 8
+WIKI_HOME_PAGE_SIZE = 8
 
 ADMIN_USER_ACTIONS = frozenset(
     {
@@ -581,13 +589,27 @@ def community_wiki_picker(request):
 
 def wiki_home(request):
     query = request.GET.get("q", "").strip()
-    search_results = get_wiki_search_results(query=query, limit=8)
+    page_number = request.GET.get("page", "1").strip() or "1"
+    wiki_queryset = get_wiki_search_queryset(query=query)
+    paginator = Paginator(wiki_queryset, WIKI_HOME_PAGE_SIZE)
+    page_obj = paginator.get_page(page_number)
     context = {
         "page_heading": "Wiki",
         "list_tags": LIST_TAGS,
         "query": query,
-        "wiki_items": search_results["items"],
-        "wiki_result_count": search_results["total_count"],
+        "wiki_items": _build_wiki_card_items(page_obj.object_list),
+        "wiki_result_count": paginator.count,
+        "page_obj": page_obj,
+        "wiki_prev_url": (
+            _build_wiki_home_url(query=query, page=page_obj.previous_page_number())
+            if page_obj.has_previous()
+            else ""
+        ),
+        "wiki_next_url": (
+            _build_wiki_home_url(query=query, page=page_obj.next_page_number())
+            if page_obj.has_next()
+            else ""
+        ),
         "hide_topbar_search": True,
     }
     if request.headers.get("HX-Request") == "true":
@@ -645,6 +667,7 @@ def wiki_detail(request, slug):
     featured_wiki_documents.extend(
         list(wiki_document_queryset.exclude(pk=document.pk)[:5])
     )
+    related_wiki_documents = _get_related_wiki_documents(document, limit=4)
     selected_wiki_document_ids = [
         str(document_id)
         for document_id in (compose_post_form["wiki_documents"].value() or [])
@@ -685,6 +708,7 @@ def wiki_detail(request, slug):
             "query": "",
             "display_markdown": rendered_revision["display_markdown"],
             "rendered_markdown": rendered_revision["rendered_markdown"],
+            "citations": rendered_revision["citations"],
             "toc_items": rendered_revision["toc_items"],
             "share_url": share_url,
             "copy_human_text": _build_human_copy(document, revision, share_url),
@@ -705,6 +729,7 @@ def wiki_detail(request, slug):
             "selected_wiki_document_ids": selected_wiki_document_ids,
             "selected_wiki_documents": selected_wiki_documents,
             "locked_wiki_document_ids": [str(document.pk)],
+            "related_wiki_items": _build_wiki_card_items(related_wiki_documents),
             "compose_wiki_search_url": reverse("community_wiki_picker"),
             "tag_options": list(_community_tag_queryset()[:12]),
             "compose_tag_options": list(_community_tag_queryset()[:40]),
@@ -997,6 +1022,220 @@ def _build_wiki_card_items(documents):
         }
         for document in documents
     ]
+
+
+def _get_related_wiki_documents(document, *, limit=4):
+    if document.current_revision_id is None or limit <= 0:
+        return []
+
+    source_document_ids = list(
+        WikiRevisionSource.objects.filter(
+            wiki_revision_id=document.current_revision_id
+        ).values_list("source_chunk__source_document_id", flat=True)
+    )
+    related_documents: list[WikiDocument] = []
+    seen_document_ids = {document.pk}
+    base_queryset = _community_wiki_document_queryset().exclude(pk=document.pk)
+    embedding_model = _get_document_embedding_model(document)
+
+    if embedding_model:
+        embedding_related_documents = _get_embedding_related_wiki_documents(
+            document=document,
+            source_document_ids=source_document_ids,
+            embedding_model=embedding_model,
+            limit=limit,
+        )
+        related_documents.extend(embedding_related_documents)
+        seen_document_ids.update(
+            related_document.pk for related_document in embedding_related_documents
+        )
+
+    if len(related_documents) < limit and source_document_ids:
+        source_related_documents = list(
+            base_queryset.exclude(pk__in=seen_document_ids)
+            .annotate(
+                shared_source_document_count=Count(
+                    "current_revision__sources__source_chunk__source_document",
+                    filter=Q(
+                        current_revision__sources__source_chunk__source_document_id__in=source_document_ids
+                    ),
+                    distinct=True,
+                )
+            )
+            .filter(shared_source_document_count__gt=0)
+            .order_by("-shared_source_document_count", "-updated_at", "title")[
+                : limit - len(related_documents)
+            ]
+        )
+        related_documents.extend(source_related_documents)
+        seen_document_ids.update(
+            related_document.pk for related_document in source_related_documents
+        )
+
+    if len(related_documents) < limit:
+        fallback_documents = list(
+            base_queryset.exclude(pk__in=seen_document_ids).order_by(
+                "-updated_at", "title"
+            )[: limit - len(related_documents)]
+        )
+        related_documents.extend(fallback_documents)
+
+    return related_documents
+
+
+def _get_embedding_related_wiki_documents(
+    *, document, source_document_ids, embedding_model: str, limit: int
+):
+    current_vector = _get_document_embedding_centroid(
+        document,
+        embedding_model=embedding_model,
+    )
+    if current_vector is None:
+        return []
+
+    candidate_documents = list(
+        _community_wiki_document_queryset()
+        .exclude(pk=document.pk)
+        .filter(
+            current_revision__sources__source_chunk__embeddings__embedding_model=embedding_model
+        )
+        .select_related("current_revision")
+        .prefetch_related(
+            "current_revision__sources__source_chunk__embeddings",
+            "current_revision__sources__source_chunk",
+        )
+        .distinct()
+    )
+    scored_documents = []
+    source_document_id_set = set(source_document_ids)
+    for candidate_document in candidate_documents:
+        candidate_vector = _get_document_embedding_centroid(
+            candidate_document,
+            embedding_model=embedding_model,
+        )
+        if candidate_vector is None:
+            continue
+        similarity = _cosine_similarity(current_vector, candidate_vector)
+        if similarity is None:
+            continue
+        candidate_source_document_ids = _get_document_source_document_ids(
+            candidate_document
+        )
+        shared_source_document_count = len(
+            source_document_id_set.intersection(candidate_source_document_ids)
+        )
+        scored_documents.append(
+            (
+                shared_source_document_count,
+                similarity,
+                candidate_document.updated_at,
+                candidate_document,
+            )
+        )
+
+    scored_documents.sort(
+        key=lambda item: (
+            -item[0],
+            -item[1],
+            -item[2].timestamp(),
+            item[3].title,
+        )
+    )
+    return [item[3] for item in scored_documents[:limit]]
+
+
+def _get_document_embedding_model(document):
+    if document.current_revision_id is None:
+        return None
+    return (
+        ChunkEmbedding.objects.filter(
+            source_chunk__wiki_revision_sources__wiki_revision_id=document.current_revision_id
+        )
+        .order_by("embedding_model", "created_at")
+        .values_list("embedding_model", flat=True)
+        .first()
+    )
+
+
+def _get_document_embedding_centroid(document, *, embedding_model: str):
+    if document.current_revision_id is None:
+        return None
+
+    vectors = []
+    seen_chunk_ids = set()
+    for revision_source in document.current_revision.sources.all():
+        source_chunk = revision_source.source_chunk
+        if source_chunk.pk in seen_chunk_ids:
+            continue
+        seen_chunk_ids.add(source_chunk.pk)
+        embedding = next(
+            (
+                chunk_embedding
+                for chunk_embedding in source_chunk.embeddings.all()
+                if chunk_embedding.embedding_model == embedding_model
+            ),
+            None,
+        )
+        if embedding is None:
+            continue
+        parsed_vector = _parse_embedding_vector(embedding.embedding)
+        if parsed_vector is None:
+            continue
+        vectors.append(parsed_vector)
+
+    if not vectors:
+        return None
+
+    dimension = len(vectors[0])
+    centroid = [0.0] * dimension
+    for vector in vectors:
+        if len(vector) != dimension:
+            continue
+        for index, value in enumerate(vector):
+            centroid[index] += value
+    vector_count = len(vectors)
+    return [value / vector_count for value in centroid]
+
+
+def _get_document_source_document_ids(document):
+    if document.current_revision_id is None:
+        return set()
+    return {
+        revision_source.source_chunk.source_document_id
+        for revision_source in document.current_revision.sources.all()
+    }
+
+
+def _parse_embedding_vector(value):
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple)):
+        return [float(item) for item in value]
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        if stripped[0] == "[" and stripped[-1] == "]":
+            stripped = stripped[1:-1]
+        if not stripped:
+            return None
+        return [float(item.strip()) for item in stripped.split(",") if item.strip()]
+    return None
+
+
+def _cosine_similarity(left_vector, right_vector):
+    if not left_vector or not right_vector or len(left_vector) != len(right_vector):
+        return None
+    numerator = 0.0
+    left_norm = 0.0
+    right_norm = 0.0
+    for left_value, right_value in zip(left_vector, right_vector, strict=True):
+        numerator += left_value * right_value
+        left_norm += left_value * left_value
+        right_norm += right_value * right_value
+    if left_norm <= 0 or right_norm <= 0:
+        return None
+    return numerator / (math.sqrt(left_norm) * math.sqrt(right_norm))
 
 
 def _get_selected_wiki_documents(selected_wiki_document_ids):
@@ -1472,6 +1711,18 @@ def _build_community_feed_url(*, page, selected_tag_slug=""):
     if selected_tag_slug:
         params["tag"] = selected_tag_slug
     return f"{reverse('community_list')}?{urlencode(params)}"
+
+
+def _build_wiki_home_url(*, query="", page=1):
+    params = {}
+    if query:
+        params["q"] = query
+    if page and int(page) > 1:
+        params["page"] = page
+    querystring = urlencode(params)
+    return (
+        f"{reverse('wiki_home')}?{querystring}" if querystring else reverse("wiki_home")
+    )
 
 
 def _build_community_list_url(

@@ -91,6 +91,52 @@
                     <article class="reading-prose prose prose-stone mt-8 max-w-none leading-8 text-on-surface">
                         {{ rendered_markdown|safe }}
                     </article>
+                    {% if citations %}
+                        <section class="mt-8 border-t border-outline-variant/70 pt-6">
+                            <div class="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <h2 class="font-headline text-2xl font-extrabold tracking-tight text-on-surface">참고 출처</h2>
+                                    <p class="mt-1 text-sm text-on-surface-variant">본문의 출처 표기를 읽기 쉬운 목록으로 정리했습니다.</p>
+                                </div>
+                                <div class="rounded-full bg-surface-container-high px-4 py-2 text-sm font-semibold text-on-surface-variant">
+                                    {{ citations|length }}건
+                                </div>
+                            </div>
+                            <ol class="mt-5 space-y-3">
+                                {% for citation in citations %}
+                                    <li class="rounded-[1.25rem] bg-white/80 px-5 py-4 shadow-sm ring-1 ring-outline-variant/50">
+                                        <div class="flex items-start gap-4">
+                                            <span class="wiki-citation-pill">{{ citation.index }}</span>
+                                            <div class="min-w-0 flex-1">
+                                                <div class="font-semibold text-on-surface">{{ citation.title }}</div>
+                                                <a href="{{ citation.url }}"
+                                                   class="mt-2 block break-all text-sm text-primary underline decoration-primary/40 underline-offset-2 transition hover:text-primary/80"
+                                                   rel="noopener noreferrer">{{ citation.url }}</a>
+                                            </div>
+                                        </div>
+                                    </li>
+                                {% endfor %}
+                            </ol>
+                        </section>
+                    {% endif %}
+                    {% if related_wiki_items %}
+                        <section class="mt-8 border-t border-outline-variant/70 pt-6">
+                            <div class="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <h2 class="font-headline text-2xl font-extrabold tracking-tight text-on-surface">연관 위키</h2>
+                                    <p class="mt-1 text-sm text-on-surface-variant">같은 출처를 공유하거나 최근 함께 참고할 만한 문서를 모았습니다.</p>
+                                </div>
+                                <div class="rounded-full bg-surface-container-high px-4 py-2 text-sm font-semibold text-on-surface-variant">
+                                    {{ related_wiki_items|length }}건
+                                </div>
+                            </div>
+                            <div class="mt-5 grid gap-4 xl:grid-cols-2">
+                                {% for item in related_wiki_items %}
+                                    {% include "partials/wiki_card.html" %}
+                                {% endfor %}
+                            </div>
+                        </section>
+                    {% endif %}
                 {% else %}
                     {% include "partials/empty_state.html" with title="표시할 리비전이 없습니다" description="현재 문서에 연결된 최신 리비전이 없습니다." %}
                 {% endif %}

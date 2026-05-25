@@ -31,6 +31,7 @@ ALLOWED_TAGS = [
     "pre",
     "span",
     "strong",
+    "sup",
     "table",
     "tbody",
     "td",
@@ -50,6 +51,7 @@ ALLOWED_ATTRIBUTES = {
 }
 REVISION_RENDER_CACHE_TIMEOUT = 60 * 60 * 24 * 7
 CODE_NODE_RE = re.compile(r"<code\b[^>]*>.*?</code>", re.DOTALL)
+INLINE_SOURCE_RE = re.compile(r"출처:\s*\[([^\]]+)\]\(([^)\s]+)\)")
 
 
 def build_rendered_markdown(
@@ -99,6 +101,7 @@ def build_rendered_markdown(
 def get_cached_revision_render(*, revision, title: str) -> dict[str, object]:
     if revision is None:
         return {
+            "citations": [],
             "display_markdown": "",
             "rendered_markdown": "",
             "toc_items": [],
@@ -110,8 +113,10 @@ def get_cached_revision_render(*, revision, title: str) -> dict[str, object]:
         return cached_value
 
     display_markdown = strip_leading_title_heading(revision.content_markdown, title)
+    display_markdown, citations = _extract_inline_citations(display_markdown)
     rendered_markdown, toc_items = build_rendered_markdown(display_markdown)
     payload = {
+        "citations": citations,
         "display_markdown": display_markdown,
         "rendered_markdown": rendered_markdown,
         "toc_items": toc_items,
@@ -142,3 +147,32 @@ def _restore_code_node_entities(match: re.Match[str]) -> str:
         .replace("&amp;#39;", "&#39;")
         .replace("&amp;amp;", "&amp;")
     )
+
+
+def _extract_inline_citations(
+    markdown_text: str,
+) -> tuple[str, list[dict[str, str | int]]]:
+    if not markdown_text:
+        return "", []
+
+    citations: list[dict[str, str | int]] = []
+    citation_numbers: dict[tuple[str, str], int] = {}
+
+    def replace(match: re.Match[str]) -> str:
+        title, url = match.groups()
+        key = (title.strip(), url.strip())
+        number = citation_numbers.get(key)
+        if number is None:
+            number = len(citations) + 1
+            citation_numbers[key] = number
+            citations.append(
+                {
+                    "index": number,
+                    "title": key[0],
+                    "url": key[1],
+                }
+            )
+        return f'<sup class="wiki-citation-marker">[{number}]</sup>'
+
+    cleaned_markdown = INLINE_SOURCE_RE.sub(replace, markdown_text)
+    return cleaned_markdown, citations

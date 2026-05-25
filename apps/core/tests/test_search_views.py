@@ -215,6 +215,63 @@ class SearchViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'value="회고"', html=False)
 
+    def test_wiki_home_paginates_full_page_results(self):
+        for index in range(9):
+            document = WikiDocument.objects.create(
+                title=f"운영 문서 {index}",
+                slug=f"ops-doc-{index}",
+                summary="페이지네이션 확인용 문서입니다.",
+                status=WikiDocumentStatus.PUBLISHED,
+                updated_at=timezone.now() + timezone.timedelta(minutes=index),
+            )
+            revision = WikiRevision.objects.create(
+                wiki_document=document,
+                revision_number=1,
+                content_markdown="## 운영 문서",
+                generation_type=WikiGenerationType.AI,
+                generation_model="gpt-5.5",
+            )
+            document.current_revision = revision
+            document.save(update_fields=["current_revision"])
+
+        response = self.client.get("/wiki/", {"page": 2})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "페이지 2 / 2")
+        self.assertContains(response, "운영 문서 0")
+        self.assertNotContains(response, "운영 문서 8")
+
+    def test_wiki_home_paginates_htmx_results_with_query(self):
+        for index in range(9):
+            document = WikiDocument.objects.create(
+                title=f"회고 문서 {index}",
+                slug=f"retro-doc-{index}",
+                summary="회고 검색 결과입니다.",
+                status=WikiDocumentStatus.PUBLISHED,
+                updated_at=timezone.now() + timezone.timedelta(minutes=index),
+            )
+            revision = WikiRevision.objects.create(
+                wiki_document=document,
+                revision_number=1,
+                content_markdown="## 회고 항목",
+                generation_type=WikiGenerationType.AI,
+                generation_model="gpt-5.5",
+            )
+            document.current_revision = revision
+            document.save(update_fields=["current_revision"])
+
+        response = self.client.get(
+            "/wiki/",
+            {"q": "회고", "page": 2},
+            headers={"HX-Request": "true"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "페이지 2 / 2")
+        self.assertContains(response, 'hx-get="/wiki/?q=%ED%9A%8C%EA%B3%A0"')
+        self.assertContains(response, "회고 문서 0")
+        self.assertNotContains(response, "회고 문서 8")
+
     def test_integrated_search_returns_empty_state_for_blank_htmx_query(self):
         response = self.client.get(
             "/search/",

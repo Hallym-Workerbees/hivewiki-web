@@ -19,6 +19,31 @@
                 {% include "partials/wiki_card.html" %}
             {% endfor %}
         </div>
+        {% if page_obj.paginator.num_pages > 1 %}
+            <div class="flex items-center justify-between gap-4 rounded-[1.5rem] bg-surface-container-high px-5 py-4">
+                <div class="text-sm text-on-surface-variant">페이지 {{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</div>
+                <div class="flex items-center gap-3">
+                    {% if page_obj.has_previous %}
+                        <a href="{{ wiki_prev_url }}"
+                           hx-get="{{ wiki_prev_url }}"
+                           hx-target="#wiki-search-results"
+                           hx-swap="innerHTML"
+                           class="rounded-full bg-white px-4 py-2 text-sm font-semibold text-on-surface transition hover:-translate-y-0.5 hover:bg-surface">
+                            이전
+                        </a>
+                    {% endif %}
+                    {% if page_obj.has_next %}
+                        <a href="{{ wiki_next_url }}"
+                           hx-get="{{ wiki_next_url }}"
+                           hx-target="#wiki-search-results"
+                           hx-swap="innerHTML"
+                           class="rounded-full bg-white px-4 py-2 text-sm font-semibold text-on-surface transition hover:-translate-y-0.5 hover:bg-surface">
+                            다음
+                        </a>
+                    {% endif %}
+                </div>
+            </div>
+        {% endif %}
     {% else %}
         {% include "partials/empty_state.html" with title="문서를 찾지 못했습니다" description="다른 키워드나 더 짧은 검색어로 다시 시도해 보세요." %}
     {% endif %}

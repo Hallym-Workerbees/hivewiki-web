@@ -6,7 +6,7 @@ from django.urls import reverse
 from .models import Post, PostStatus, WikiDocument, WikiDocumentStatus
 
 
-def get_wiki_search_results(*, query="", limit=12):
+def get_wiki_search_queryset(*, query=""):
     documents = (
         WikiDocument.objects.filter(
             status=WikiDocumentStatus.PUBLISHED,
@@ -43,6 +43,12 @@ def get_wiki_search_results(*, query="", limit=12):
                 | Q(summary__icontains=normalized_query)
                 | Q(current_revision__content_markdown__icontains=normalized_query)
             )
+    return documents
+
+
+def get_wiki_search_results(*, query="", limit=12):
+    normalized_query = query.strip()
+    documents = get_wiki_search_queryset(query=query)
 
     total_count = documents.count()
     documents = list(documents[:limit])

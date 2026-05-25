@@ -253,6 +253,29 @@ h6 {
   text-align: left;
 }
 
+.reading-prose .wiki-citation-marker {
+  margin-left: 0.18rem;
+  color: var(--primary);
+  font-size: 0.78em;
+  font-weight: 800;
+  line-height: 1;
+  vertical-align: super;
+}
+
+.wiki-citation-pill {
+  display: inline-flex;
+  min-width: 2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--primary-container) 70%, white);
+  color: var(--on-primary-container);
+  font-size: 0.9rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0.45rem 0.55rem;
+}
+
 .wiki-actions-panel {
   position: relative;
 }

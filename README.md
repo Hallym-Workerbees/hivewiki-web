@@ -1,74 +1,127 @@
 # HiveWiki Web
 
-HiveWiki Web은 HiveWiki 프로젝트의 웹 애플리케이션입니다.  
-**Django** 기반으로 개발되며 **htmx**, **Tailwind CSS**, 그리고 최소한의 커스텀 JavaScript를 활용한 서버 렌더링 중심 구조를 목표로 합니다.
+HiveWiki Web은 HiveWiki 프로젝트의 Django 기반 웹 애플리케이션입니다.  
+서버 렌더링을 기본으로 하고, 필요한 상호작용만 `htmx`와 최소한의 JavaScript로 보강합니다.
 
-## 개발 환경
+포트폴리오 관점에서는 "SPA를 만들지 않고도 충분히 빠르고 운영 가능한 웹 앱을 설계한 사례"에 가깝고, 개발자 관점에서는 "Django 템플릿 중심 구조를 팀 단위로 유지보수하기 위한 기준"을 담고 있습니다.
 
-이 프로젝트는 다음 도구들을 사용합니다.
+## Highlights
+
+- Django + htmx + Tailwind CSS 기반 서버 렌더링 아키텍처
+- PostgreSQL을 source of truth로 사용하는 명확한 상태 관리
+- Valkey(Redis-compatible)를 세션, 캐시, rate limit 저장소로 사용
+- `GET /livez/`, `GET /readyz/`, `GET /metrics/` 운영 엔드포인트 내장
+- Prometheus / Grafana 연동 예시와 구조화 JSON 요청 로그 제공
+- 로그인 rate limit, OAuth 로그인/연동, S3 프로필 이미지 업로드 지원
+- 브라우저 timezone을 세션에 동기화해 사용자 기준 시각을 안정적으로 렌더링
+- 관리자 콘솔, 위키, 커뮤니티, 통합 검색까지 한 저장소에서 제공
+
+## Tech Stack
 
 - Python 3.12
-- Django
-- uv (dependency management)
-- pre-commit (코드 품질 자동 검사)
-- Ruff (Python lint + formatter)
-- djLint (Django template lint/format)
-- gitleaks (secret detection)
-- commitizen (commit message validation)
+- Django 5
+- htmx
+- Tailwind CSS
+- PostgreSQL
+- Valkey / Redis
+- uv
+- pre-commit
+- Ruff
+- djLint
+- Prometheus client
 
-## 프로젝트 구조
+## Product Surface
 
-현재 기준의 주요 폴더 구조는 아래와 같습니다.
+- 공개 랜딩 페이지
+- 로그인, 회원가입, OAuth 로그인/계정 연동
+- 대시보드와 마이페이지
+- 위키 탐색, 상세 페이지, 북마크
+- 커뮤니티 글/댓글, 좋아요, 북마크
+- 통합 검색
+- 관리자 콘솔 사용자/태그/수집/콘텐츠 관리
+
+## Architecture At A Glance
+
+### 서버 렌더링 우선
+
+- 전체 페이지 요청은 전체 템플릿을 반환합니다.
+- htmx 요청은 필요한 partial HTML만 반환합니다.
+- JSON API를 별도로 늘리지 않고 Django view + template 조합으로 기능을 완결합니다.
+
+### 얇은 View, 명시적인 책임 분리
+
+- 입력 검증은 Django form이 담당합니다.
+- 인증, 업로드, rate limit 같은 로직은 `apps/accounts/services.py`에 둡니다.
+- 운영 기능은 `config/observability.py`, `config/logging.py`, `config/healthchecks.py`에 모읍니다.
+
+### 상태 관리 원칙
+
+- PostgreSQL이 비즈니스 데이터의 단일 진실 원천입니다.
+- Valkey는 세션, 캐시, 일시적 상태에만 사용합니다.
+- 프로세스 메모리를 공유 상태로 간주하지 않습니다.
+
+## Repository Map
 
 ```txt
 hivewiki-web/
   apps/
-    accounts/              # 회원가입, 로그인, 로그아웃, 마이페이지, 비밀번호 변경
-      forms.py             # 인증/프로필 관련 Django form
-      models.py            # HiveUser 모델
-      services.py          # 비밀번호 해시, 세션 로그인, rate limit 로직
-      tests/               # 인증 플로우 테스트
-      urls.py
-      views.py
-    core/                  # 홈, 대시보드, 커뮤니티/위키 진입 화면
-      urls.py
-      views.py
+    accounts/      # 인증, 프로필, OAuth, 알림, 비밀번호 변경
+    core/          # 대시보드, 위키, 커뮤니티, 검색, 관리자 콘솔
   config/
-    settings.py            # Django 설정, .env 로딩, 보안/세션/캐시 설정
-    urls.py                # 루트 URL 라우팅 및 운영 엔드포인트
-    observability.py       # liveness/readiness probe, Prometheus metrics
-  static/
-    css/app.css            # 공용 스타일
-    js/app.js              # 최소 클라이언트 스크립트와 timezone 동기화
-  templates/
-    layouts/               # public/app/auth 레이아웃
-    pages/                 # 페이지 템플릿
-    partials/              # 재사용 가능한 컴포넌트 템플릿
-  .env.example             # 개발/배포용 환경변수 예시
-  manage.py
+    settings.py    # 환경설정, 보안, 세션, 캐시, 로깅
+    urls.py        # 루트 URL과 운영 엔드포인트
+    observability.py
+    logging.py
+    healthchecks.py
+  templates/       # 레이아웃, 페이지, partial 템플릿
+  static/          # 최소 JS와 공용 스타일
+  docs/
+    architecture.md
+    development.md
+    observability/
 ```
 
-## 시작하기
+## Quick Start
+
+### 1. 로컬 준비
 
 ```bash
 git clone <repository-url>
 cd hivewiki-web
-uv sync
 cp .env.example .env
+uv sync
 uv run pre-commit install --hook-type pre-commit --hook-type commit-msg
 ```
 
-이 저장소에서는 `nix develop --command ...` 실행도 지원하며, 로컬 도구 버전을 맞춰야 할 때 권장합니다.
-
-로컬 PostgreSQL과 Valkey가 실행 중이라면 아래 명령으로 기본 검증과 서버 실행이 가능합니다.
+Nix devshell을 쓰는 팀원이라면 아래 방식이 기준입니다.
 
 ```bash
-UV_CACHE_DIR=/tmp/hivewiki-uv-cache uv run python manage.py migrate
-UV_CACHE_DIR=/tmp/hivewiki-uv-cache uv run python manage.py test
-UV_CACHE_DIR=/tmp/hivewiki-uv-cache uv run python manage.py runserver
+nix develop
 ```
 
-같은 작업을 devshell 안에서 실행하려면 아래처럼 사용할 수 있습니다.
+이 devshell은 `.venv` 생성, `uv sync`, pre-commit hook 설치까지 처리합니다.
+
+### 2. 필수 인프라 실행
+
+로컬에서 최소한 아래 두 가지가 떠 있어야 합니다.
+
+- PostgreSQL
+- Valkey 또는 Redis
+
+`.env.example`의 기본값은 다음 로컬 주소를 기준으로 합니다.
+
+- PostgreSQL: `127.0.0.1:5432`
+- Redis: `127.0.0.1:6379/0`
+
+### 3. 마이그레이션, 테스트, 서버 실행
+
+```bash
+uv run python manage.py migrate
+uv run python manage.py test
+uv run python manage.py runserver
+```
+
+devshell 기준 예시는 아래와 같습니다.
 
 ```bash
 nix develop --command python manage.py migrate
@@ -76,140 +129,124 @@ nix develop --command python manage.py test
 nix develop --command python manage.py runserver
 ```
 
-이 프로젝트는 pre-commit hooks를 사용합니다.  
-코드가 자동으로 수정되면 커밋이 중단될 수 있으며, 수정된 파일을 확인한 뒤 다시 add하고 커밋하면 됩니다.
+## Developer Workflow
 
-Commit message는 **영어로 작성해야 하며**, Conventional Commits 규칙을 따릅니다.  
-자세한 규칙은 이 [문서](https://commitizen-tools.github.io/commitizen/tutorials/writing_commits/)를 참고하세요.
+일상적인 개발 루틴은 아래 순서를 권장합니다.
 
-## 환경변수
+1. `.env`를 준비하고 PostgreSQL / Valkey를 띄웁니다.
+2. `python manage.py test`로 변경 영역의 기본 동작을 먼저 확인합니다.
+3. 화면 변경 시 full-page 응답과 htmx partial 응답을 모두 확인합니다.
+4. `pre-commit run --all-files`로 포맷, lint, secret check를 통과시킵니다.
+5. 커밋 메시지는 영어 Conventional Commits 형식을 사용합니다.
 
-기본 예시는 [.env.example](./.env.example)에 있습니다. 로컬 개발에서는 `.env`를 사용하고, 배포에서는 인프라 레벨에서 동일한 키를 주입하면 됩니다.
+기여 방식과 리뷰 기준은 [CONTRIBUTING.md](./CONTRIBUTING.md)를 참고하세요.
 
-이 프로젝트는 핵심 설정에 대해 fallback을 두지 않습니다.  
-즉 `DJANGO_SECRET_KEY`, PostgreSQL 접속 정보, `REDIS_URL` 이 누락되면 앱이 시작되지 않습니다.
+## Environment Variables
 
-### Django 기본 설정
+기본 예시는 [.env.example](./.env.example)에 있습니다.  
+핵심 설정은 fallback 없이 강제되므로, 누락되면 애플리케이션이 시작되지 않을 수 있습니다.
 
-- `DJANGO_SECRET_KEY`: Django secret key. 배포에서는 반드시 강한 랜덤 값 사용
-- `DJANGO_DEBUG`: 개발에서는 `True`, 배포에서는 `False`
-- `DJANGO_ALLOWED_HOSTS`: 허용할 호스트 목록. 쉼표로 구분
-- `DJANGO_CSRF_TRUSTED_ORIGINS`: CSRF trusted origin 목록. 쉼표로 구분
-- `DJANGO_CLIENT_IP_HEADER`: 로그인 rate limit에 사용할 신뢰 헤더 이름
-  예: `HTTP_X_FORWARDED_FOR`
+### 핵심 앱 설정
 
-### 세션 / CSRF / 보안 설정
+- `DJANGO_SECRET_KEY`
+- `DJANGO_DEBUG`
+- `DJANGO_ALLOWED_HOSTS`
+- `DJANGO_CSRF_TRUSTED_ORIGINS`
+- `DJANGO_CLIENT_IP_HEADER`
 
-- `DJANGO_SESSION_COOKIE_SECURE`: HTTPS에서만 세션 쿠키 전송 여부
-- `DJANGO_SESSION_COOKIE_SAMESITE`: 세션 쿠키 SameSite 값. 기본 `Lax`
-- `DJANGO_CSRF_COOKIE_SECURE`: HTTPS에서만 CSRF 쿠키 전송 여부
-- `DJANGO_CSRF_COOKIE_SAMESITE`: CSRF 쿠키 SameSite 값. 기본 `Lax`
-- `DJANGO_SECURE_SSL_REDIRECT`: HTTP 요청을 HTTPS로 리다이렉트할지 여부
-- `DJANGO_SECURE_HSTS_SECONDS`: HSTS max-age
-- `DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS`: HSTS 서브도메인 포함 여부
-- `DJANGO_SECURE_HSTS_PRELOAD`: HSTS preload 선언 여부
-- `DJANGO_SECURE_CONTENT_TYPE_NOSNIFF`: `X-Content-Type-Options: nosniff` 사용 여부
-- `DJANGO_X_FRAME_OPTIONS`: `X-Frame-Options` 값. 기본 `DENY`
-- `DJANGO_LOG_LEVEL`: 애플리케이션 로그 레벨. 기본 `INFO`
-- `DJANGO_LOG_JSON`: JSON 구조화 로그 사용 여부. 기본 `True`
-- `DJANGO_LOG_HEALTHCHECKS`: `/livez/`, `/readyz/`, `/metrics/` access 로그 출력 여부. 기본 `False`
-- `DJANGO_SECURE_PROXY_SSL_HEADER`: 프록시 뒤에서 HTTPS 판별에 사용할 헤더
-  예: `HTTP_X_FORWARDED_PROTO,https`
-- `SESSION_COOKIE_AGE`: 세션 유지 시간. 초 단위
+### 데이터 저장소
 
-`/livez/`, `/readyz/`, `/metrics/`는 인프라용 엔드포인트라 `DJANGO_SECURE_SSL_REDIRECT=True`여도 HTTPS redirect 예외로 처리됩니다. 또한 `/metrics/`는 host validation 전에 처리되므로 Prometheus가 Pod IP 기반으로 scrape 하더라도 Django의 `ALLOWED_HOSTS` 검증에 막히지 않습니다.
+- `POSTGRES_DB`
+- `POSTGRES_USER`
+- `POSTGRES_PASSWORD`
+- `POSTGRES_HOST`
+- `POSTGRES_PORT`
+- `POSTGRES_CONNECT_TIMEOUT`
+- `REDIS_URL`
+- `REDIS_SOCKET_CONNECT_TIMEOUT`
+- `REDIS_SOCKET_TIMEOUT`
 
-브라우저 timezone은 별도 엔드포인트 `POST /auth/timezone/`를 통해 세션 키 `django_timezone`에 저장됩니다. 이 값은 로그인/로그아웃 과정에서 세션이 재설정되어도 유지되며, 서버는 이를 사용해 사용자별 시간대를 활성화하고 클라이언트는 timezone-sensitive UI를 로컬 시간대로 다시 렌더링합니다.
+### 세션 / 보안
 
-### 로깅
+- `DJANGO_SESSION_COOKIE_SECURE`
+- `DJANGO_SESSION_COOKIE_SAMESITE`
+- `DJANGO_CSRF_COOKIE_SECURE`
+- `DJANGO_CSRF_COOKIE_SAMESITE`
+- `DJANGO_SECURE_SSL_REDIRECT`
+- `DJANGO_SECURE_HSTS_SECONDS`
+- `DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS`
+- `DJANGO_SECURE_HSTS_PRELOAD`
+- `DJANGO_SECURE_CONTENT_TYPE_NOSNIFF`
+- `DJANGO_X_FRAME_OPTIONS`
+- `SESSION_COOKIE_AGE`
 
-애플리케이션은 표준 출력으로 JSON 구조화 로그를 남깁니다. 요청 로그에는 최소한 아래 필드가 포함됩니다.
+### 로깅 / 운영
 
-- `timestamp`
-- `level`
-- `logger`
-- `message`
-- `request_id`
-- `upstream_request_id`
-- `method`
-- `path`
-- `status_code`
-- `duration_ms`
-- `user_id`
-- `remote_addr`
+- `DJANGO_LOG_LEVEL`
+- `DJANGO_LOG_JSON`
+- `DJANGO_LOG_HEALTHCHECKS`
+- `DJANGO_SECURE_PROXY_SSL_HEADER`
 
-애플리케이션은 내부 `request_id`를 항상 새로 생성하고 응답 헤더 `X-Request-ID`에도 같은 값을 돌려줍니다. 앞단 프록시나 Ingress가 `X-Request-ID`를 넘기면 `upstream_request_id`로 별도 기록합니다.
+### 인증 / 업로드
 
-### 로그인 rate limit
-
-- `LOGIN_RATE_LIMIT_ATTEMPTS`: 허용할 로그인 실패 횟수
-- `LOGIN_RATE_LIMIT_WINDOW_SECONDS`: rate limit 시간 창. 초 단위
-
-현재 구현은 `client_ip + email` 기준으로 실패 횟수를 캐시에 저장합니다.  
-앞단 프록시가 실제 클라이언트 IP를 정리해 준다는 전제에서, 앱은 `DJANGO_CLIENT_IP_HEADER` 또는 `REMOTE_ADDR`를 사용합니다.
-
-### OAuth
-
-- `GOOGLE_OAUTH_CLIENT_ID`: Google OAuth client ID
-- `GOOGLE_OAUTH_CLIENT_SECRET`: Google OAuth client secret
-- `GITHUB_OAUTH_CLIENT_ID`: GitHub OAuth app client ID
-- `GITHUB_OAUTH_CLIENT_SECRET`: GitHub OAuth app client secret
-
-OAuth callback URL은 현재 요청의 host/scheme를 기준으로 서버에서 생성합니다.  
-배포 환경에서는 프록시/Ingress 설정과 `ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`, `DJANGO_SECURE_PROXY_SSL_HEADER`가 올바르게 맞아 있어야 합니다.
-
-### S3 프로필 이미지 업로드
-
-- `AWS_S3_UPLOAD_BUCKET`: 프로필 이미지 업로드 대상 버킷 이름
-- `AWS_S3_UPLOAD_REGION`: 업로드 대상 리전
-- `AWS_S3_UPLOAD_ACCESS_KEY_ID`: S3 접근 키. IAM role 등을 쓰지 않으면 필요
-- `AWS_S3_UPLOAD_SECRET_ACCESS_KEY`: S3 시크릿 키. IAM role 등을 쓰지 않으면 필요
-- `AWS_S3_UPLOAD_ENDPOINT_URL`: S3 호환 스토리지용 endpoint URL. AWS S3 기본 endpoint를 쓸 때는 비워둘 수 있음
-- `AWS_S3_UPLOAD_PUBLIC_BASE_URL`: 업로드 후 사용자에게 노출할 공개 URL prefix
-- `AWS_S3_PROFILE_IMAGE_PREFIX`: object key prefix. 기본값 `profiles`
-
-프로필 이미지 업로드가 활성화되려면 애플리케이션 관점에서 최소한 아래 값이 필요합니다.
-
+- `LOGIN_RATE_LIMIT_ATTEMPTS`
+- `LOGIN_RATE_LIMIT_WINDOW_SECONDS`
+- `GOOGLE_OAUTH_CLIENT_ID`
+- `GOOGLE_OAUTH_CLIENT_SECRET`
+- `GITHUB_OAUTH_CLIENT_ID`
+- `GITHUB_OAUTH_CLIENT_SECRET`
 - `AWS_S3_UPLOAD_BUCKET`
 - `AWS_S3_UPLOAD_REGION`
+- `AWS_S3_UPLOAD_ACCESS_KEY_ID`
+- `AWS_S3_UPLOAD_SECRET_ACCESS_KEY`
+- `AWS_S3_UPLOAD_ENDPOINT_URL`
 - `AWS_S3_UPLOAD_PUBLIC_BASE_URL`
+- `AWS_S3_PROFILE_IMAGE_PREFIX`
 
-`AWS_S3_UPLOAD_PUBLIC_BASE_URL`은 명시적으로 넣는 것을 권장합니다. 이 값은 presigned POST 업로드 대상이 아니라 업로드 완료 후 저장할 공개 URL의 prefix로 사용됩니다. 따라서 다음과 같은 값이 가능합니다.
+상세 설명은 [docs/development.md](./docs/development.md)에 정리했습니다.
 
-- AWS S3 기본 공개 URL: `https://my-bucket.s3.ap-northeast-2.amazonaws.com`
-- CloudFront 기본 도메인: `https://d123exampleabcd.cloudfront.net`
-- CloudFront 커스텀 도메인: `https://media.example.com`
+## Things Every Developer Should Know
 
-예를 들어 `AWS_S3_UPLOAD_PUBLIC_BASE_URL=https://media.example.com` 이고 `AWS_S3_PROFILE_IMAGE_PREFIX=profiles` 라면 최종 이미지 URL은 `https://media.example.com/profiles/<user-id>/<random>.png` 형태가 됩니다.
+### 1. htmx 응답 규칙
 
-`AWS_S3_UPLOAD_ENDPOINT_URL`은 자동 생성되지 않습니다. AWS S3를 그대로 쓰는 경우에는 비워둘 수 있고, MinIO/R2/Object Storage 같은 S3 호환 스토리지를 쓸 때만 직접 지정하면 됩니다.
+- 전체 페이지 요청이면 전체 템플릿을 반환합니다.
+- htmx 요청이면 partial 템플릿을 반환합니다.
+- validation error가 나면 관련 폼 partial을 다시 렌더링합니다.
+- htmx 기능을 위해 JSON API를 새로 만들지 않습니다.
 
-반대로 `AWS_S3_UPLOAD_PUBLIC_BASE_URL`은 비어 있을 경우 아래 규칙으로 자동 유도될 수 있습니다.
+### 2. 시간대 처리
 
-- `AWS_S3_UPLOAD_ENDPOINT_URL`이 있으면 `https://<endpoint>/<bucket>` 형태
-- 아니면 `https://<bucket>.s3.<region>.amazonaws.com` 형태
+- 사용자 브라우저 timezone은 `POST /auth/timezone/`로 세션 키 `django_timezone`에 저장됩니다.
+- 로그인/로그아웃에서 `session.flush()`가 일어나더라도 이 timezone은 유지되어야 합니다.
+- 시간 민감 UI는 기존 `timezone-sensitive` 패턴을 사용해야 합니다.
 
-다만 CloudFront를 쓰는 배포 환경에서는 자동 유도값 대신 실제 공개 도메인을 명시하는 편이 안전합니다.
+### 3. 요청 로깅
 
-### 데이터베이스 / 캐시
+- 요청마다 내부 `request_id`를 새로 발급합니다.
+- 응답 헤더 `X-Request-ID`에도 같은 값을 반환합니다.
+- 프록시가 넘긴 `X-Request-ID`는 `upstream_request_id`로 별도 기록합니다.
+- 기본 로그 포맷은 JSON이며 stdout을 대상으로 합니다.
 
-- `POSTGRES_DB`: PostgreSQL 데이터베이스 이름
-- `POSTGRES_USER`: PostgreSQL 사용자
-- `POSTGRES_PASSWORD`: PostgreSQL 비밀번호
-- `POSTGRES_HOST`: PostgreSQL 호스트
-- `POSTGRES_PORT`: PostgreSQL 포트
-- `POSTGRES_CONNECT_TIMEOUT`: PostgreSQL 연결 timeout. 초 단위, 기본 `1`
-- `REDIS_URL`: Valkey/Redis URL. 세션 및 캐시에 사용
-- `REDIS_SOCKET_CONNECT_TIMEOUT`: Valkey/Redis 연결 timeout. 초 단위, 기본 `1.0`
-- `REDIS_SOCKET_TIMEOUT`: Valkey/Redis 읽기/쓰기 timeout. 초 단위, 기본 `1.0`
+### 4. Health Check와 Metrics는 기능 일부가 아니라 운영 계약입니다
 
-## 운영 엔드포인트
+- `/livez/`는 프로세스 생존 확인용입니다.
+- `/readyz/`는 DB와 캐시 준비 상태를 확인합니다.
+- `/metrics/`는 Prometheus scrape endpoint입니다.
+- 이 경로들은 HTTPS redirect와 host validation 예외 처리까지 고려되어 있습니다.
 
-- `GET /livez/`: 프로세스 liveness 확인. 정상 시 `200 OK`
-- `GET /readyz/`: PostgreSQL과 Valkey readiness 확인. 하나라도 실패하면 `503 Service Unavailable`
-- `GET /metrics/`: Prometheus scrape endpoint
+### 5. DB schema 변경은 별도 합의 대상입니다
 
-`/metrics/`는 최소한 아래 메트릭을 제공합니다.
+이 저장소에서는 기능 요청이 있더라도 스키마 변경이 필요하면 먼저 문서와 최종 요약에서 명시하는 편이 안전합니다.
+
+## Observability
+
+현재 내장 운영 엔드포인트:
+
+- `GET /livez/`
+- `GET /readyz/`
+- `GET /metrics/`
+
+기본 메트릭:
 
 - `hivewiki_up`
 - `hivewiki_process_start_time_seconds`
@@ -218,41 +255,46 @@ OAuth callback URL은 현재 요청의 host/scheme를 기준으로 서버에서 
 - `hivewiki_ready`
 - `hivewiki_http_requests_total{method,route}`
 - `hivewiki_http_responses_total{method,route,status_code}`
-- `hivewiki_http_request_duration_seconds_bucket{method,route,le}`
-- `hivewiki_http_request_duration_seconds_sum{method,route}`
-- `hivewiki_http_request_duration_seconds_count{method,route}`
+- `hivewiki_http_request_duration_seconds_*`
 
-HTTP 메트릭의 `route` 라벨은 가능한 경우 raw path 대신 Django route pattern 기준으로 집계해 path parameter로 인한 cardinality 증가를 줄입니다.
+관련 문서:
 
-### Prometheus / Grafana 구성 가이드
+- [docs/observability/README.md](./docs/observability/README.md)
+- [docs/observability/healthcheck-ideas.md](./docs/observability/healthcheck-ideas.md)
 
-이 저장소에는 아래 예시 파일이 포함되어 있습니다.
+## Documentation Index
 
-- `docs/observability/prometheus-scrape.example.yml`
-- `docs/observability/grafana-dashboard-hivewiki-overview.json`
-- `docs/observability/README.md`
+- [CONTRIBUTING.md](./CONTRIBUTING.md): 브랜치, 리뷰, 테스트, 커밋 규칙
+- [docs/development.md](./docs/development.md): 로컬 개발, 환경변수, 디버깅 포인트
+- [docs/architecture.md](./docs/architecture.md): 앱 구조와 설계 원칙
+- [docs/observability/README.md](./docs/observability/README.md): 메트릭, Prometheus, Grafana
+- [docs/observability/healthcheck-ideas.md](./docs/observability/healthcheck-ideas.md): 현재 구현을 확장할 수 있는 운영 아이디어
 
-경우별 운영 원칙은 아래와 같습니다.
+## Portfolio Framing
 
-- 단일 인스턴스 또는 단일 컨테이너
-  `GET /metrics/`를 해당 인스턴스 주소로 직접 scrape 하면 됩니다.
-- Kubernetes에서 Pod가 여러 개
-  외부 LB나 Ingress 주소 하나를 scrape하지 말고, Prometheus가 각 Pod endpoint를 개별 target으로 발견하도록 설정해야 합니다.
-- 한 Pod 안에 worker 프로세스가 여러 개
-  `PROMETHEUS_MULTIPROC_DIR`를 설정해 Pod 내부 프로세스 메트릭도 합산해야 합니다.
+이 프로젝트는 아래 관점에서 설명하기 좋습니다.
 
-여러 Pod 메트릭의 "클러스터 전체 집계"는 애플리케이션이 직접 하는 것이 아니라 Prometheus 쿼리에서 수행합니다. 예를 들어 전체 요청량은 `sum(rate(hivewiki_http_requests_total[5m]))`처럼 계산합니다.
+- Django를 단순 CRUD 프레임워크가 아니라 운영 가능한 웹 애플리케이션 플랫폼으로 사용한 사례
+- 서버 렌더링과 htmx를 조합해 복잡도를 낮추면서도 상호작용성을 확보한 사례
+- request ID, health checks, readiness, metrics, JSON logging까지 포함한 운영 관점의 설계 사례
+- 사용자 timezone, OAuth, rate limit, presigned upload 같은 현실적인 웹 요구사항을 통합한 사례
 
-## 배포 시 권장값
+## Quality Gates
 
-배포 환경에서는 최소한 아래 값들을 권장합니다.
+- `uv-lock`
+- Ruff lint / format
+- djLint
+- gitleaks
+- Commitizen
 
-```env
-DJANGO_DEBUG=False
-DJANGO_SESSION_COOKIE_SECURE=True
-DJANGO_CSRF_COOKIE_SECURE=True
-DJANGO_SECURE_SSL_REDIRECT=True
-DJANGO_SECURE_HSTS_SECONDS=31536000
-DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS=True
-DJANGO_SECURE_HSTS_PRELOAD=True
+가능하면 최종 변경 전 아래 명령을 실행합니다.
+
+```bash
+pre-commit run --all-files
 ```
+
+## Deployment Notes
+
+- 이 저장소는 애플리케이션 코드 저장소입니다.
+- 인프라, GitOps, Prometheus 배포 설정은 별도 저장소에서 관리됩니다.
+- 운영 변경이 세션, 캐시, 환경변수, static asset, startup behavior에 영향을 주면 후속 작업을 배포 저장소에도 반영해야 합니다.

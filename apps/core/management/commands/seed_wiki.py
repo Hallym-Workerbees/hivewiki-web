@@ -23,6 +23,7 @@ from apps.core.models import (
     WikiRevision,
     WikiRevisionSource,
 )
+from apps.core.wiki_embeddings import sync_wiki_document_embedding
 
 EMBEDDING_MODEL = "text-embedding-3-small"
 EMBEDDING_DIM = 1536
@@ -509,6 +510,7 @@ class Command(BaseCommand):
                     evidence_text=chunk.content_text[:240],
                 )
                 seeded_sources += 1
+            sync_wiki_document_embedding(wiki_document)
 
         for seed in SEED_COMMUNITY_POSTS:
             author, author_created = self._get_or_create_seed_user(seed["author"])

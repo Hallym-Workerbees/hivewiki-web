@@ -1,11 +1,10 @@
 import logging
-import math
 import re
 from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.core.paginator import Paginator
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Case, Count, IntegerField, Prefetch, Q, Value, When
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -26,7 +25,6 @@ from .community_content import extract_linked_wiki_slugs
 from .forms import CommentForm, PostForm, SourceForm, TagForm
 from .markdown_rendering import get_cached_revision_render
 from .models import (
-    ChunkEmbedding,
     Comment,
     CommentLike,
     IngestionJob,
@@ -1086,115 +1084,82 @@ def _get_related_wiki_documents(document, *, limit=4):
 def _get_embedding_related_wiki_documents(
     *, document, source_document_ids, embedding_model: str, limit: int
 ):
-    current_vector = _get_document_embedding_centroid(
-        document,
+    candidate_ids = _get_embedding_related_wiki_document_ids(
+        document=document,
+        source_document_ids=source_document_ids,
         embedding_model=embedding_model,
+        limit=limit,
     )
-    if current_vector is None:
+    if not candidate_ids:
         return []
 
-    candidate_documents = list(
-        _community_wiki_document_queryset()
-        .exclude(pk=document.pk)
-        .filter(
-            current_revision__sources__source_chunk__embeddings__embedding_model=embedding_model
-        )
+    candidate_documents = {
+        str(candidate_document.pk): candidate_document
+        for candidate_document in _community_wiki_document_queryset()
+        .filter(pk__in=candidate_ids)
         .select_related("current_revision")
-        .prefetch_related(
-            "current_revision__sources__source_chunk__embeddings",
-            "current_revision__sources__source_chunk",
-        )
-        .distinct()
-    )
-    scored_documents = []
-    source_document_id_set = set(source_document_ids)
-    for candidate_document in candidate_documents:
-        candidate_vector = _get_document_embedding_centroid(
-            candidate_document,
-            embedding_model=embedding_model,
-        )
-        if candidate_vector is None:
-            continue
-        similarity = _cosine_similarity(current_vector, candidate_vector)
-        if similarity is None:
-            continue
-        candidate_source_document_ids = _get_document_source_document_ids(
-            candidate_document
-        )
-        shared_source_document_count = len(
-            source_document_id_set.intersection(candidate_source_document_ids)
-        )
-        scored_documents.append(
-            (
-                shared_source_document_count,
-                similarity,
-                candidate_document.updated_at,
-                candidate_document,
-            )
-        )
+    }
+    return [
+        candidate_documents[candidate_id]
+        for candidate_id in candidate_ids
+        if candidate_id in candidate_documents
+    ]
 
-    scored_documents.sort(
-        key=lambda item: (
-            -item[0],
-            -item[1],
-            -item[2].timestamp(),
-            item[3].title,
+
+def _get_embedding_related_wiki_document_ids(
+    *, document, source_document_ids, embedding_model: str, limit: int
+):
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            WITH current_embedding AS (
+                SELECT embedding
+                FROM wiki_document_embeddings
+                WHERE wiki_document_id = %s
+                  AND embedding_model = %s
+                LIMIT 1
+            )
+            SELECT wd.id::text
+            FROM wiki_document_embeddings AS wde
+            JOIN wiki_documents AS wd
+              ON wd.id = wde.wiki_document_id
+            CROSS JOIN current_embedding AS ce
+            LEFT JOIN wiki_revision_sources AS wrs
+              ON wrs.wiki_revision_id = wd.current_revision_id
+            LEFT JOIN source_chunks AS sc
+              ON sc.id = wrs.source_chunk_id
+            WHERE wde.embedding_model = %s
+              AND wd.id <> %s
+              AND wd.status = %s
+              AND wd.current_revision_id IS NOT NULL
+            GROUP BY wd.id, wd.updated_at, wd.title, wde.embedding, ce.embedding
+            ORDER BY
+              wde.embedding <=> ce.embedding ASC,
+              COUNT(DISTINCT sc.source_document_id)
+                  FILTER (WHERE sc.source_document_id = ANY(%s)) DESC,
+              wd.updated_at DESC,
+              wd.title ASC
+            LIMIT %s
+            """,
+            [
+                str(document.pk),
+                embedding_model,
+                embedding_model,
+                str(document.pk),
+                WikiDocumentStatus.PUBLISHED,
+                source_document_ids,
+                limit,
+            ],
         )
-    )
-    return [item[3] for item in scored_documents[:limit]]
+        return [row[0] for row in cursor.fetchall()]
 
 
 def _get_document_embedding_model(document):
-    if document.current_revision_id is None:
-        return None
     return (
-        ChunkEmbedding.objects.filter(
-            source_chunk__wiki_revision_sources__wiki_revision_id=document.current_revision_id
-        )
-        .order_by("embedding_model", "created_at")
+        document.embeddings.order_by("embedding_model", "updated_at")
         .values_list("embedding_model", flat=True)
         .first()
     )
-
-
-def _get_document_embedding_centroid(document, *, embedding_model: str):
-    if document.current_revision_id is None:
-        return None
-
-    vectors = []
-    seen_chunk_ids = set()
-    for revision_source in document.current_revision.sources.all():
-        source_chunk = revision_source.source_chunk
-        if source_chunk.pk in seen_chunk_ids:
-            continue
-        seen_chunk_ids.add(source_chunk.pk)
-        embedding = next(
-            (
-                chunk_embedding
-                for chunk_embedding in source_chunk.embeddings.all()
-                if chunk_embedding.embedding_model == embedding_model
-            ),
-            None,
-        )
-        if embedding is None:
-            continue
-        parsed_vector = _parse_embedding_vector(embedding.embedding)
-        if parsed_vector is None:
-            continue
-        vectors.append(parsed_vector)
-
-    if not vectors:
-        return None
-
-    dimension = len(vectors[0])
-    centroid = [0.0] * dimension
-    for vector in vectors:
-        if len(vector) != dimension:
-            continue
-        for index, value in enumerate(vector):
-            centroid[index] += value
-    vector_count = len(vectors)
-    return [value / vector_count for value in centroid]
 
 
 def _get_document_source_document_ids(document):
@@ -1204,38 +1169,6 @@ def _get_document_source_document_ids(document):
         revision_source.source_chunk.source_document_id
         for revision_source in document.current_revision.sources.all()
     }
-
-
-def _parse_embedding_vector(value):
-    if value is None:
-        return None
-    if isinstance(value, (list, tuple)):
-        return [float(item) for item in value]
-    if isinstance(value, str):
-        stripped = value.strip()
-        if not stripped:
-            return None
-        if stripped[0] == "[" and stripped[-1] == "]":
-            stripped = stripped[1:-1]
-        if not stripped:
-            return None
-        return [float(item.strip()) for item in stripped.split(",") if item.strip()]
-    return None
-
-
-def _cosine_similarity(left_vector, right_vector):
-    if not left_vector or not right_vector or len(left_vector) != len(right_vector):
-        return None
-    numerator = 0.0
-    left_norm = 0.0
-    right_norm = 0.0
-    for left_value, right_value in zip(left_vector, right_vector, strict=True):
-        numerator += left_value * right_value
-        left_norm += left_value * left_value
-        right_norm += right_value * right_value
-    if left_norm <= 0 or right_norm <= 0:
-        return None
-    return numerator / (math.sqrt(left_norm) * math.sqrt(right_norm))
 
 
 def _get_selected_wiki_documents(selected_wiki_document_ids):

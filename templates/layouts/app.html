@@ -2,9 +2,9 @@
 {% block body %}
     <div class="min-h-screen bg-surface">
         {% include "partials/sidebar.html" %}
-        <div class="lg:ml-72">
+        <div class="flex min-h-screen flex-col lg:ml-72">
             {% include "partials/topbar.html" %}
-            <main class="px-6 pb-12 pt-28 lg:px-10">
+            <main class="flex-1 px-6 pb-12 pt-28 lg:px-10">
                 {% block app_content %}
                 {% endblock app_content %}
             </main>

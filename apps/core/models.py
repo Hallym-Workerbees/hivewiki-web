@@ -619,6 +619,48 @@ class WikiRevision(models.Model):
         ]
 
 
+class WikiDocumentEmbedding(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    wiki_document = models.ForeignKey(
+        WikiDocument,
+        on_delete=models.CASCADE,
+        related_name="embeddings",
+        db_column="wiki_document_id",
+    )
+    wiki_revision = models.ForeignKey(
+        WikiRevision,
+        on_delete=models.CASCADE,
+        related_name="document_embeddings",
+        db_column="wiki_revision_id",
+    )
+    embedding_model = models.CharField(max_length=100)
+    embedding_dim = models.IntegerField()
+    embedding = VectorField(dimensions=1536)
+    content_hash = models.CharField(max_length=64)
+    provider = models.CharField(max_length=50)
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "wiki_document_embeddings"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["wiki_document", "embedding_model"],
+                name="uq_wiki_document_embeddings_document_model",
+            )
+        ]
+        indexes = [
+            models.Index(
+                fields=["wiki_revision"],
+                name="wiki_doc_embed_revision_idx",
+            ),
+            models.Index(
+                fields=["embedding_model", "-updated_at"],
+                name="wiki_doc_emb_model_upd_idx",
+            ),
+        ]
+
+
 class WikiRevisionSource(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     wiki_revision = models.ForeignKey(

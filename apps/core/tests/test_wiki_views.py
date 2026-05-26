@@ -8,6 +8,7 @@ from apps.core.models import (
     SourceChunk,
     SourceDocument,
     WikiDocument,
+    WikiDocumentEmbedding,
     WikiDocumentStatus,
     WikiGenerationType,
     WikiRevision,
@@ -364,6 +365,60 @@ class WikiViewTests(TestCase):
             response.context["related_wiki_items"][0]["title"],
             "복수전공 신청 안내",
         )
+
+    def test_wiki_document_embedding_is_created_from_source_chunk_embeddings(self):
+        source = Source.objects.create(
+            name="학사 공지",
+            target_url="https://example.com/notices",
+        )
+        source_document = SourceDocument.objects.create(
+            source=source,
+            canonical_url="https://example.com/notices/course-change",
+            title="수강신청 변경 안내 원문",
+            body_text="수강신청 변경 일정",
+        )
+        source_chunk = SourceChunk.objects.create(
+            source_document=source_document,
+            chunk_index=0,
+            content_text="수강신청 변경 일정",
+        )
+        ChunkEmbedding.objects.create(
+            source_chunk=source_chunk,
+            embedding_model="text-embedding-3-small",
+            embedding_dim=1536,
+            embedding=self._embedding(1.0, 0.0),
+        )
+
+        document = WikiDocument.objects.create(
+            title="수강신청 변경 안내",
+            slug="course-change-embedding",
+            summary="수강신청 변경 기간 안내 문서입니다.",
+            status=WikiDocumentStatus.PUBLISHED,
+            updated_at=timezone.now(),
+        )
+        revision = WikiRevision.objects.create(
+            wiki_document=document,
+            revision_number=1,
+            content_markdown="## 수강신청 변경",
+            generation_type=WikiGenerationType.AI,
+            generation_model="gpt-5.5",
+        )
+        document.current_revision = revision
+        document.save(update_fields=["current_revision"])
+        WikiRevisionSource.objects.create(
+            wiki_revision=revision,
+            source_chunk=source_chunk,
+            evidence_text=source_chunk.content_text,
+        )
+
+        embedding = WikiDocumentEmbedding.objects.get(
+            wiki_document=document,
+            embedding_model="text-embedding-3-small",
+        )
+
+        self.assertEqual(embedding.wiki_revision_id, revision.id)
+        self.assertEqual(embedding.provider, "source_chunk_centroid")
+        self.assertEqual(embedding.embedding_dim, 1536)
 
     def test_wiki_detail_adds_safe_rel_to_links(self):
         document = WikiDocument.objects.create(

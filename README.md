@@ -301,3 +301,5 @@ pre-commit run --all-files
 - 이 저장소는 애플리케이션 코드 저장소입니다.
 - 인프라, GitOps, Prometheus 배포 설정은 별도 저장소에서 관리됩니다.
 - 운영 변경이 세션, 캐시, 환경변수, static asset, startup behavior에 영향을 주면 후속 작업을 배포 저장소에도 반영해야 합니다.
+
+---

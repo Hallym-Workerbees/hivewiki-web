@@ -1,3 +1,4 @@
+import html
 import re
 
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)(?:\s+#+\s*)?$")
@@ -7,10 +8,12 @@ MARKDOWN_DECORATION_RE = re.compile(r"[*_~>#-]+")
 MULTISPACE_RE = re.compile(r"\s+")
 WIKI_LINK_RE = re.compile(r"/wiki/(?P<slug>[-\w]+)/")
 MARKDOWN_IMAGE_RE = re.compile(r"!\[[^\]]*]\((?P<url>[^)\s]+)(?:\s+\"[^\"]*\")?\)")
+HTML_IMAGE_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
+HTML_ATTR_RE = re.compile(r'(?P<name>[\w:-]+)\s*=\s*"(?P<value>[^"]*)"')
 
 
 def build_post_markdown(body_markdown: str) -> str:
-    cleaned_body = body_markdown.strip()
+    cleaned_body = _normalize_html_images(body_markdown).strip()
     if not cleaned_body:
         raise ValueError("게시글 본문은 비어 있을 수 없습니다.")
     return cleaned_body
@@ -87,9 +90,15 @@ def extract_first_image_url(content_markdown: str) -> str:
         return ""
 
     match = MARKDOWN_IMAGE_RE.search(content_markdown)
-    if not match:
+    if match:
+        return match.group("url").strip()
+
+    html_match = HTML_IMAGE_RE.search(content_markdown)
+    if not html_match:
         return ""
-    return match.group("url").strip()
+
+    attributes = _parse_html_attributes(html_match.group(0))
+    return attributes.get("src", "").strip()
 
 
 def _plain_text(value: str) -> str:
@@ -101,3 +110,25 @@ def _plain_text(value: str) -> str:
 
 def _normalize_line(value: str) -> str:
     return MULTISPACE_RE.sub(" ", value.strip())
+
+
+def _normalize_html_images(value: str) -> str:
+    if not value:
+        return ""
+    return HTML_IMAGE_RE.sub(_replace_html_image_with_markdown, value)
+
+
+def _replace_html_image_with_markdown(match: re.Match[str]) -> str:
+    attributes = _parse_html_attributes(match.group(0))
+    src = attributes.get("src", "").strip()
+    if not src:
+        return ""
+    alt = attributes.get("alt", "").strip()
+    return f"![{alt}]({src})"
+
+
+def _parse_html_attributes(tag: str) -> dict[str, str]:
+    return {
+        attr_match.group("name").lower(): html.unescape(attr_match.group("value"))
+        for attr_match in HTML_ATTR_RE.finditer(tag)
+    }

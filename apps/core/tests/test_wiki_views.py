@@ -134,12 +134,15 @@ class WikiViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(
             response,
-            '<sup class="wiki-citation-marker">[1]</sup>',
-            html=True,
+            'id="wiki-citation-ref-1-1"',
         )
+        self.assertContains(response, 'href="#wiki-citation-1"')
+        self.assertContains(response, 'id="wiki-citation-1"')
         self.assertContains(response, "참고 출처")
         self.assertContains(response, "2026학년도 1학기 수강신청 변경 기간 안내")
         self.assertContains(response, "https://example.com/course-change")
+        self.assertContains(response, "본문으로")
+        self.assertNotContains(response, "인용 2회")
 
     def test_wiki_detail_shows_related_wiki_documents(self):
         source = Source.objects.create(

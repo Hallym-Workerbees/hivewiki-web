@@ -170,11 +170,21 @@ def _extract_inline_citations(
             citations.append(
                 {
                     "index": number,
+                    "first_reference_id": f"wiki-citation-ref-{number}-1",
+                    "occurrence_count": 0,
                     "title": key[0],
                     "url": key[1],
                 }
             )
-        return f'<sup class="wiki-citation-marker">[{number}]</sup>'
+        citation = citations[number - 1]
+        citation["occurrence_count"] = int(citation["occurrence_count"]) + 1
+        occurrence = citation["occurrence_count"]
+        reference_id = f"wiki-citation-ref-{number}-{occurrence}"
+        return (
+            f'<sup class="wiki-citation-marker" id="{reference_id}">'
+            f'<a href="#wiki-citation-{number}" class="wiki-citation-link">[{number}]</a>'
+            "</sup>"
+        )
 
     cleaned_markdown = INLINE_SOURCE_RE.sub(replace, markdown_text)
     return cleaned_markdown, citations

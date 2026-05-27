@@ -23,3 +23,11 @@ class MarkdownRenderingTests(SimpleTestCase):
 
         self.assertIn("<img", rendered_markdown)
         self.assertNotIn("onclick=", rendered_markdown)
+
+    def test_build_rendered_markdown_dedupes_footnote_backrefs(self):
+        rendered_markdown, _ = build_rendered_markdown(
+            "본문[^1][^1]\n\n# 참고 문헌\n\n[^1]: [예시](https://example.com)"
+        )
+
+        self.assertIn('class="footnote-backref"', rendered_markdown)
+        self.assertEqual(rendered_markdown.count('class="footnote-backref"'), 1)

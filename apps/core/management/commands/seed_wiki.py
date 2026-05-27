@@ -286,6 +286,55 @@ confidence = \frac{verified\_sources}{all\_claims}
 """,
         },
     },
+    {
+        "source": {
+            "name": "HiveWiki Seed Source",
+            "target_url": "https://local.hivewiki.test/wiki-seed",
+        },
+        "document": {
+            "canonical_url": "https://local.hivewiki.test/docs/footnote-reference-demo",
+            "title": "Footnote 참고 문헌 렌더링 예시",
+            "body_text": (
+                "동일한 참고 문헌을 본문에서 여러 번 인용하는 footnote 스타일이 "
+                "어떻게 렌더링되는지 확인하기 위한 데모 문서입니다."
+            ),
+        },
+        "chunks": [
+            {
+                "chunk_index": 0,
+                "chunk_type": "overview",
+                "section_title": "주요 내용",
+                "content_text": (
+                    "2026 Station C 2차 아이데이션 캠프는 AI 기반 콘텐츠 비즈니스와 "
+                    "로컬 문제 해결 창업 아이디어 발굴을 중심으로 운영됩니다."
+                ),
+            },
+            {
+                "chunk_index": 1,
+                "chunk_type": "audience",
+                "section_title": "참여 대상",
+                "content_text": (
+                    "인문대학, 사회과학대학, 경영대학, 글로벌융합대학, 미디어스쿨, "
+                    "반도체디스플레이스쿨, 미래융합스쿨 소속 학생이 참여 대상입니다."
+                ),
+            },
+        ],
+        "wiki": {
+            "title": "Footnote 참고 문헌 렌더링 예시",
+            "slug": "footnote-reference-demo",
+            "summary": "동일한 footnote 참고 문헌을 여러 번 인용하는 위키 렌더링 예시입니다.",
+            "content_markdown": """# 주요 내용
+
+2026 Station C 2차 아이데이션 캠프의 주요 내용은 AI 기반 콘텐츠 비즈니스를 활용한 로컬 문제 해결 창업 아이디어 발굴을 중심으로 구성되어 있다[^1]. 또한 생성형 AI를 활용한 상세페이지 제작 등의 프로그램이 포함되어 있다[^1].
+
+해당 캠프는 인문대학, 사회과학대학, 경영대학, 글로벌융합대학, 미디어스쿨, 반도체디스플레이스쿨, 미래융합스쿨 소속 학생들을 참여 대상으로 하며[^1], 프로그램 참여 시 공결 처리가 진행된다[^1].
+
+# 참고 문헌
+
+[^1]: [2026 Station C 2차 아이데이션 캠프 참여 안내](https://example.com/station-c-camp)
+""",
+        },
+    },
 ]
 
 SEED_COMMUNITY_POSTS = [

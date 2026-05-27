@@ -95,6 +95,14 @@ h6 {
   min-width: 6ch;
 }
 
+.prose {
+  color: inherit;
+}
+
+.prose-stone {
+  color: inherit;
+}
+
 .reading-prose p {
   margin-bottom: 1.25rem;
   color: var(--on-surface-variant);

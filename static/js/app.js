@@ -11,6 +11,7 @@ document.body.addEventListener("htmx:afterSwap", (event) => {
   initializeWikiToc(root);
   initializeCodeCopyButtons(root);
   initializeProfileImageUploader(root);
+  initializeCommunityComposeImagePaste(root);
   renderMath(target || document.body);
 });
 
@@ -55,6 +56,19 @@ document.body.addEventListener("htmx:afterRequest", () => {
 document.body.addEventListener("htmx:responseError", () => {
   window.stopAdminRefreshAnimation();
 });
+
+function syncBodyScrollLock() {
+  const hasOpenComposeModal = Boolean(
+    document.querySelector("[data-community-compose-modal].flex")
+  );
+  const hasOpenDrawer = Boolean(
+    document.querySelector('[data-app-drawer-root][data-drawer-open="true"]')
+  );
+  document.body.classList.toggle(
+    "overflow-hidden",
+    hasOpenComposeModal || hasOpenDrawer
+  );
+}
 
 function closeAdminModal() {
   const modalRoot = document.querySelector("#admin-modal-root");
@@ -140,6 +154,66 @@ document.body.addEventListener("click", async (event) => {
   copyTrigger.dataset.resetTimer = String(timerId);
 });
 
+document.body.addEventListener("click", (event) => {
+  const replyOpenTrigger =
+    event.target instanceof Element
+      ? event.target.closest("[data-comment-reply-open]")
+      : null;
+  if (replyOpenTrigger instanceof HTMLElement) {
+    event.preventDefault();
+    const targetSelector = replyOpenTrigger.dataset.commentReplyTarget || "";
+    const target =
+      targetSelector ? document.querySelector(targetSelector) : null;
+    if (
+      target instanceof HTMLElement &&
+      target.innerHTML.trim() &&
+      target.querySelector("form")
+    ) {
+      event.preventDefault();
+      target.innerHTML = "";
+      return;
+    }
+
+    document.querySelectorAll("[data-comment-reply-slot]").forEach((slot) => {
+      if (!(slot instanceof HTMLElement) || `#${slot.id}` === targetSelector) {
+        return;
+      }
+      slot.innerHTML = "";
+    });
+
+    const requestUrl = replyOpenTrigger.dataset.commentReplyUrl || "";
+    if (
+      requestUrl &&
+      targetSelector &&
+      typeof window.htmx?.ajax === "function"
+    ) {
+      window.htmx.ajax("GET", requestUrl, {
+        target: targetSelector,
+        swap: "innerHTML",
+      });
+    }
+    return;
+  }
+
+  const replyCloseTrigger =
+    event.target instanceof Element
+      ? event.target.closest("[data-comment-reply-close]")
+      : null;
+  if (!(replyCloseTrigger instanceof HTMLElement)) {
+    return;
+  }
+
+  const targetSelector = replyCloseTrigger.dataset.commentReplyTarget || "";
+  const target =
+    targetSelector ? document.querySelector(targetSelector) : null;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  event.preventDefault();
+  target.innerHTML = "";
+});
+
 async function writeToClipboard(value) {
   if (navigator.clipboard && window.isSecureContext) {
     await navigator.clipboard.writeText(value);
@@ -216,16 +290,7 @@ function renderMath(root) {
 }
 
 function initializeWikiToc(root = document) {
-  const tocNav =
-    root instanceof Element
-      ? root.querySelector("[data-toc-nav]") || document.querySelector("[data-toc-nav]")
-      : document.querySelector("[data-toc-nav]");
-  if (!(tocNav instanceof HTMLElement)) {
-    disconnectWikiTocObserver();
-    return;
-  }
-
-  const tocLinks = Array.from(tocNav.querySelectorAll("[data-toc-link]"));
+  const tocLinks = Array.from(document.querySelectorAll("[data-toc-link]"));
   if (!tocLinks.length) {
     disconnectWikiTocObserver();
     return;
@@ -448,6 +513,369 @@ function initializeProfileImageUploader(root = document) {
   });
 }
 
+function insertTextareaText(textarea, text) {
+  const start = textarea.selectionStart ?? textarea.value.length;
+  const end = textarea.selectionEnd ?? textarea.value.length;
+  textarea.value =
+    textarea.value.slice(0, start) + text + textarea.value.slice(end);
+  const nextCursor = start + text.length;
+  textarea.focus();
+  textarea.setSelectionRange(nextCursor, nextCursor);
+  textarea.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function initializeCommunityComposeImagePaste(root = document) {
+  const forms =
+    root instanceof Element
+      ? root.matches("[data-community-compose-form]")
+        ? [root]
+        : root.querySelectorAll("[data-community-compose-form]")
+      : document.querySelectorAll("[data-community-compose-form]");
+
+  forms.forEach((form) => {
+    if (
+      !(form instanceof HTMLFormElement) ||
+      form.dataset.imagePasteReady === "true"
+    ) {
+      return;
+    }
+
+    const textarea = form.querySelector("[data-community-compose-body]");
+    const csrfInput = form.querySelector('input[name="csrfmiddlewaretoken"]');
+    const statusNode = form.querySelector(
+      "[data-community-compose-upload-status]",
+    );
+    if (
+      !(textarea instanceof HTMLTextAreaElement) ||
+      !(csrfInput instanceof HTMLInputElement) ||
+      !(statusNode instanceof HTMLElement)
+    ) {
+      return;
+    }
+
+    const setStatus = (message, tone = "muted") => {
+      statusNode.textContent = message;
+      statusNode.classList.remove("hidden", "text-red-700", "text-emerald-700");
+      statusNode.classList.add("block");
+      statusNode.classList.toggle("text-red-700", tone === "error");
+      statusNode.classList.toggle("text-emerald-700", tone === "success");
+    };
+
+    textarea.addEventListener("paste", async (event) => {
+      const imageItem = Array.from(event.clipboardData?.items || []).find(
+        (item) => item.kind === "file" && item.type.startsWith("image/"),
+      );
+      if (!imageItem) {
+        return;
+      }
+
+      const file = imageItem.getAsFile();
+      if (!file) {
+        return;
+      }
+
+      event.preventDefault();
+      setStatus("이미지 업로드를 준비하고 있습니다.");
+
+      let prepareResponse;
+      try {
+        const fileExtension =
+          file.type === "image/png"
+            ? "png"
+            : file.type === "image/jpeg"
+              ? "jpg"
+              : file.type === "image/gif"
+                ? "gif"
+                : file.type === "image/webp"
+                  ? "webp"
+                  : "png";
+        const preparePayload = new URLSearchParams({
+          filename: `pasted-image-${Date.now()}.${fileExtension}`,
+          content_type: file.type,
+        });
+        prepareResponse = await fetch(form.dataset.uploadPrepareUrl || "", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+            "X-CSRFToken": csrfInput.value,
+            "X-Requested-With": "XMLHttpRequest",
+          },
+          body: preparePayload.toString(),
+          credentials: "same-origin",
+        });
+      } catch {
+        setStatus("업로드 준비 중 오류가 발생했습니다.", "error");
+        return;
+      }
+
+      const prepareData = await prepareResponse.json();
+      if (!prepareResponse.ok) {
+        setStatus(prepareData.error || "업로드를 준비할 수 없습니다.", "error");
+        return;
+      }
+
+      const uploadPayload = new FormData();
+      Object.entries(prepareData.fields || {}).forEach(([key, value]) => {
+        uploadPayload.append(key, `${value}`);
+      });
+      uploadPayload.append("file", file);
+
+      setStatus("이미지를 업로드하고 있습니다.");
+
+      let uploadResponse;
+      try {
+        uploadResponse = await fetch(prepareData.upload_url, {
+          method: "POST",
+          body: uploadPayload,
+          mode: "cors",
+        });
+      } catch {
+        setStatus("이미지 업로드에 실패했습니다.", "error");
+        return;
+      }
+
+      if (!uploadResponse.ok) {
+        setStatus("이미지 업로드를 완료하지 못했습니다.", "error");
+        return;
+      }
+
+      const selectionStart = textarea.selectionStart ?? textarea.value.length;
+      const prefix =
+        selectionStart > 0 &&
+        textarea.value.charAt(selectionStart - 1) !== "\n"
+          ? "\n"
+          : "";
+      insertTextareaText(
+        textarea,
+        `${prefix}![이미지](${prepareData.public_url || ""})\n`,
+      );
+      setStatus("이미지 업로드가 완료되었습니다.", "success");
+    });
+
+    form.dataset.imagePasteReady = "true";
+  });
+}
+
+function getAppDrawerRoot(side) {
+  const root = document.querySelector(`[data-app-drawer-root="${side}"]`);
+  return root instanceof HTMLElement ? root : null;
+}
+
+function getAppDrawerPanel(side) {
+  const panel = document.querySelector(`[data-app-drawer-panel="${side}"]`);
+  return panel instanceof HTMLElement ? panel : null;
+}
+
+function hasAppDrawer(side) {
+  return Boolean(getAppDrawerRoot(side) && getAppDrawerPanel(side));
+}
+
+function finalizeAppDrawerClosed(side) {
+  const root = getAppDrawerRoot(side);
+  if (!root) {
+    return;
+  }
+
+  root.classList.add("hidden");
+  root.dataset.drawerOpen = "false";
+  root.setAttribute("aria-hidden", "true");
+  syncBodyScrollLock();
+}
+
+function closeAppDrawer(side) {
+  const root = getAppDrawerRoot(side);
+  const panel = getAppDrawerPanel(side);
+  if (!root || !panel || root.dataset.drawerOpen !== "true") {
+    return;
+  }
+
+  const overlay = root.querySelector("[data-app-drawer-close]");
+  root.dataset.drawerOpen = "false";
+  root.setAttribute("aria-hidden", "true");
+  if (overlay instanceof HTMLElement) {
+    overlay.classList.remove("opacity-100");
+    overlay.classList.add("opacity-0");
+  }
+  panel.classList.remove("translate-x-0");
+  panel.classList.add(side === "left" ? "-translate-x-full" : "translate-x-full");
+  window.setTimeout(() => finalizeAppDrawerClosed(side), 220);
+  syncBodyScrollLock();
+}
+
+function openAppDrawer(side) {
+  const root = getAppDrawerRoot(side);
+  const panel = getAppDrawerPanel(side);
+  if (!root || !panel) {
+    return;
+  }
+
+  const oppositeSide = side === "left" ? "right" : "left";
+  if (hasAppDrawer(oppositeSide)) {
+    closeAppDrawer(oppositeSide);
+  }
+
+  root.classList.remove("hidden");
+  root.dataset.drawerOpen = "true";
+  root.setAttribute("aria-hidden", "false");
+  const overlay = root.querySelector("[data-app-drawer-close]");
+  panel.classList.remove("translate-x-0");
+  panel.classList.add(side === "left" ? "-translate-x-full" : "translate-x-full");
+  window.requestAnimationFrame(() => {
+    if (overlay instanceof HTMLElement) {
+      overlay.classList.remove("opacity-0");
+      overlay.classList.add("opacity-100");
+    }
+    panel.classList.remove(side === "left" ? "-translate-x-full" : "translate-x-full");
+    panel.classList.add("translate-x-0");
+  });
+  syncBodyScrollLock();
+}
+
+document.body.addEventListener("click", (event) => {
+  const openTrigger =
+    event.target instanceof Element
+      ? event.target.closest("[data-app-drawer-open]")
+      : null;
+  if (openTrigger instanceof HTMLElement) {
+    event.preventDefault();
+    openAppDrawer(openTrigger.dataset.appDrawerOpen || "left");
+    return;
+  }
+
+  const closeTrigger =
+    event.target instanceof Element
+      ? event.target.closest("[data-app-drawer-close]")
+      : null;
+  if (closeTrigger instanceof HTMLElement) {
+    event.preventDefault();
+    closeAppDrawer(closeTrigger.dataset.appDrawerCloseSide || "left");
+    return;
+  }
+
+  const drawerLink =
+    event.target instanceof Element
+      ? event.target.closest("[data-app-drawer-panel] a[href]")
+      : null;
+  if (!(drawerLink instanceof HTMLAnchorElement)) {
+    return;
+  }
+
+  const drawerPanel = drawerLink.closest("[data-app-drawer-panel]");
+  if (!(drawerPanel instanceof HTMLElement)) {
+    return;
+  }
+
+  const side = drawerPanel.dataset.appDrawerPanel;
+  if (side) {
+    closeAppDrawer(side);
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") {
+    return;
+  }
+
+  if (getAppDrawerRoot("right")?.dataset.drawerOpen === "true") {
+    closeAppDrawer("right");
+    return;
+  }
+
+  if (getAppDrawerRoot("left")?.dataset.drawerOpen === "true") {
+    closeAppDrawer("left");
+  }
+});
+
+window.addEventListener("resize", () => {
+  if (window.innerWidth < 1024) {
+    return;
+  }
+
+  finalizeAppDrawerClosed("left");
+  finalizeAppDrawerClosed("right");
+});
+
+let appDrawerTouchStart = null;
+
+document.addEventListener(
+  "touchstart",
+  (event) => {
+    if (window.innerWidth >= 1024) {
+      appDrawerTouchStart = null;
+      return;
+    }
+
+    const touch = event.touches[0];
+    if (!touch) {
+      appDrawerTouchStart = null;
+      return;
+    }
+
+    appDrawerTouchStart = {
+      x: touch.clientX,
+      y: touch.clientY,
+    };
+  },
+  { passive: true }
+);
+
+document.addEventListener(
+  "touchend",
+  (event) => {
+    if (!appDrawerTouchStart || window.innerWidth >= 1024) {
+      appDrawerTouchStart = null;
+      return;
+    }
+
+    const start = appDrawerTouchStart;
+    appDrawerTouchStart = null;
+    const touch = event.changedTouches[0];
+    if (!touch) {
+      return;
+    }
+
+    const deltaX = touch.clientX - start.x;
+    const deltaY = touch.clientY - start.y;
+    if (
+      Math.abs(deltaX) < 72 ||
+      Math.abs(deltaX) < Math.abs(deltaY) * 1.25
+    ) {
+      return;
+    }
+
+    const leftOpen = getAppDrawerRoot("left")?.dataset.drawerOpen === "true";
+    const rightOpen = getAppDrawerRoot("right")?.dataset.drawerOpen === "true";
+
+    if (leftOpen && deltaX < 0) {
+      closeAppDrawer("left");
+      return;
+    }
+
+    if (rightOpen && deltaX > 0) {
+      closeAppDrawer("right");
+      return;
+    }
+
+    if (leftOpen || rightOpen) {
+      return;
+    }
+
+    if (start.x <= 36 && deltaX > 0 && hasAppDrawer("left")) {
+      openAppDrawer("left");
+      return;
+    }
+
+    if (
+      window.innerWidth - start.x <= 36 &&
+      deltaX < 0 &&
+      hasAppDrawer("right")
+    ) {
+      openAppDrawer("right");
+    }
+  },
+  { passive: true }
+);
+
 function setCommunityComposeModalOpen(isOpen) {
   const modal = document.querySelector("[data-community-compose-modal]");
   if (!(modal instanceof HTMLElement)) {
@@ -456,7 +884,7 @@ function setCommunityComposeModalOpen(isOpen) {
 
   modal.classList.toggle("hidden", !isOpen);
   modal.classList.toggle("flex", isOpen);
-  document.body.classList.toggle("overflow-hidden", isOpen);
+  syncBodyScrollLock();
 }
 
 function applyCommunityComposePayload(payload) {
@@ -502,6 +930,23 @@ function resetCommunityComposeModalState() {
     button.classList.toggle("bg-white", !isActive);
   });
 }
+
+function restoreClosedCommunityComposeModalState() {
+  const modal = document.querySelector("[data-community-compose-modal]");
+  if (!(modal instanceof HTMLElement) || modal.classList.contains("flex")) {
+    return;
+  }
+
+  resetCommunityComposeModalState();
+}
+
+window.addEventListener("pageshow", () => {
+  restoreClosedCommunityComposeModalState();
+});
+
+window.addEventListener("load", () => {
+  restoreClosedCommunityComposeModalState();
+});
 
 document.body.addEventListener("click", (event) => {
   const openTrigger =
@@ -1103,6 +1548,7 @@ initializeWikiToc();
 initializeCodeCopyButtons();
 initializeCommunityTagSelector();
 initializeProfileImageUploader();
+initializeCommunityComposeImagePaste();
 if (document.querySelector("[data-community-compose-modal].flex")) {
   document.body.classList.add("overflow-hidden");
 }

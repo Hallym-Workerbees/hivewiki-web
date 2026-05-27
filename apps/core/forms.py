@@ -301,8 +301,9 @@ class PostForm(forms.Form):
         if not base_slug:
             raise forms.ValidationError("태그 슬러그를 생성할 수 없습니다.")
 
+        max_attempts = 20
         suffix = 1
-        while True:
+        while suffix <= max_attempts:
             slug = base_slug if suffix == 1 else f"{base_slug}-{suffix}"
             try:
                 with transaction.atomic():
@@ -315,10 +316,9 @@ class PostForm(forms.Form):
                 existing_tag = Tag.objects.filter(name__iexact=name).first()
                 if existing_tag is not None:
                     return existing_tag
-                if Tag.objects.filter(slug__iexact=slug).exists():
-                    suffix += 1
-                    continue
-                raise
+                suffix += 1
+
+        raise forms.ValidationError("태그를 생성하는 중 충돌이 반복되었습니다.")
 
 
 class CommentForm(forms.ModelForm):

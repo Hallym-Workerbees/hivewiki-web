@@ -6,6 +6,7 @@ INLINE_CODE_RE = re.compile(r"`([^`]*)`")
 MARKDOWN_DECORATION_RE = re.compile(r"[*_~>#-]+")
 MULTISPACE_RE = re.compile(r"\s+")
 WIKI_LINK_RE = re.compile(r"/wiki/(?P<slug>[-\w]+)/")
+MARKDOWN_IMAGE_RE = re.compile(r"!\[[^\]]*]\((?P<url>[^)\s]+)(?:\s+\"[^\"]*\")?\)")
 
 
 def build_post_markdown(body_markdown: str) -> str:
@@ -79,6 +80,16 @@ def build_post_excerpt(content_markdown: str, *, max_length: int = 180) -> str:
         content_markdown, excerpt_max_length=max_length
     )
     return excerpt
+
+
+def extract_first_image_url(content_markdown: str) -> str:
+    if not content_markdown:
+        return ""
+
+    match = MARKDOWN_IMAGE_RE.search(content_markdown)
+    if not match:
+        return ""
+    return match.group("url").strip()
 
 
 def _plain_text(value: str) -> str:

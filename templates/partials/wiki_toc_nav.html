@@ -1,0 +1,15 @@
+<nav data-toc-nav>
+    <ul class="space-y-2 text-sm text-on-surface-variant">
+        {% for item in toc_items %}
+            <li>
+                <a href="#{{ item.id }}"
+                   class="block rounded-xl px-3 py-2 transition hover:bg-surface-container-high hover:text-on-surface {% if item.toc_level == 1 %}pl-3{% elif item.toc_level == 2 %}pl-4{% elif item.toc_level == 3 %}pl-6{% elif item.toc_level == 4 %}pl-8{% elif item.toc_level == 5 %}pl-10{% else %}pl-12{% endif %}"
+                   data-toc-link
+                   data-toc-target="{{ item.id }}">
+                    <span class="inline-flex min-w-[2.25rem] text-stone-400">{{ item.label }}</span>
+                    <span>{{ item.text }}</span>
+                </a>
+            </li>
+        {% endfor %}
+    </ul>
+</nav>

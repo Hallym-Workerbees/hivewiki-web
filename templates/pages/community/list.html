@@ -11,15 +11,30 @@
                     <h1 class="mt-2 font-headline text-4xl font-black tracking-tight">커뮤니티 글</h1>
                 </div>
                 <div class="mt-6 flex flex-wrap gap-2">
-                    <a href="{% url 'community_list' %}"
+                    <a href="{% if selected_wiki_slug %}{% url 'community_list' %}?wiki_slug={{ selected_wiki_slug }}{% else %}{% url 'community_list' %}{% endif %}"
                        class="rounded-full px-3 py-1 text-xs font-semibold {% if not selected_tag_slug %}bg-primary-container text-on-primary-container{% else %}bg-surface-container-high text-on-surface-variant{% endif %}">전체</a>
                     {% for tag in tag_options|slice:":10" %}
-                        <a href="{% url 'community_list' %}?tag={{ tag.slug }}"
+                        <a href="{% url 'community_list' %}?tag={{ tag.slug }}{% if selected_wiki_slug %}&wiki_slug={{ selected_wiki_slug }}{% endif %}"
                            class="rounded-full px-3 py-1 text-xs font-semibold {% if selected_tag_slug == tag.slug %}bg-primary-container text-on-primary-container{% else %}bg-surface-container-high text-on-surface-variant{% endif %}">
                             #{{ tag.name }}
                         </a>
                     {% endfor %}
                 </div>
+                {% if not current_user %}
+                    <div class="mt-4">{% include "partials/guest_login_cta.html" %}</div>
+                {% endif %}
+                {% if selected_wiki_document %}
+                    <div class="mt-4 flex flex-wrap items-center gap-3 rounded-[1.5rem] bg-surface-container-high px-4 py-3">
+                        <div class="min-w-0 flex-1">
+                            <div class="text-xs font-semibold text-primary">Wiki Filter</div>
+                            <div class="mt-1 truncate text-sm font-semibold text-on-surface">{{ selected_wiki_document.title }}</div>
+                        </div>
+                        <a href="{% if selected_tag_slug %}{% url 'community_list' %}?tag={{ selected_tag_slug }}{% else %}{% url 'community_list' %}{% endif %}"
+                           class="inline-flex items-center rounded-full bg-white/80 px-3 py-1 text-xs font-semibold text-on-surface transition hover:bg-white">
+                            필터 해제
+                        </a>
+                    </div>
+                {% endif %}
                 <div id="community-feed" class="mt-2 space-y-0">
                     {% if post_items %}
                         {% include "partials/community_feed_page.html" %}
@@ -54,7 +69,7 @@
                     <div class="text-sm font-semibold text-primary">Popular Tags</div>
                     <div class="mt-4 flex flex-wrap gap-2">
                         {% for tag in tag_options|slice:":12" %}
-                            <a href="{% url 'community_list' %}?tag={{ tag.slug }}"
+                            <a href="{% url 'community_list' %}?tag={{ tag.slug }}{% if selected_wiki_slug %}&wiki_slug={{ selected_wiki_slug }}{% endif %}"
                                class="rounded-full bg-secondary-container px-3 py-1 text-xs font-medium text-on-secondary-container">#{{ tag.name }}</a>
                         {% endfor %}
                     </div>

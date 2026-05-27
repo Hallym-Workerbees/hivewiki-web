@@ -35,6 +35,17 @@
                     {{ item.summary|default:"게시글 내용이 아직 없습니다." }}
                 </div>
             </div>
+            {% if item.thumbnail_url %}
+                <div class="hidden w-28 shrink-0 overflow-hidden rounded-[1.25rem] bg-surface-container-low sm:block {% if preview_mode %}w-32{% endif %}">
+                    <img src="{{ item.thumbnail_url }}"
+                         alt="게시글 썸네일"
+                         width="160"
+                         height="120"
+                         loading="lazy"
+                         decoding="async"
+                         class="aspect-[4/3] h-full w-full object-cover">
+                </div>
+            {% endif %}
             <div class="shrink-0 text-right text-xs font-semibold text-primary">
                 <div class="{% if preview_mode %}rounded-full bg-surface-container-low px-3 py-1{% endif %}">
                     {{ item.comment_count|default:"0" }} comments

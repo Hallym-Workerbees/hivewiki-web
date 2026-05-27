@@ -1,0 +1,14 @@
+<section class="rounded-[1.5rem] bg-secondary-container/45 p-4 text-on-surface">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+            <div class="text-xs font-bold uppercase tracking-[0.22em] text-secondary">Guest Mode</div>
+            <p class="mt-1 text-sm leading-7 text-on-surface-variant">로그인하면 글쓰기, 댓글, 북마크 같은 참여 기능을 바로 사용할 수 있습니다.</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            <a href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}"
+               class="rounded-xl bg-stone-950 px-4 py-2.5 text-sm font-semibold text-stone-50 transition hover:bg-stone-800">로그인</a>
+            <a href="{% url 'signup' %}"
+               class="rounded-xl bg-white/80 px-4 py-2.5 text-sm font-semibold text-on-surface transition hover:bg-white">회원가입</a>
+        </div>
+    </div>
+</section>

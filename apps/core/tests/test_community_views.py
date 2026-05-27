@@ -1,5 +1,6 @@
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
+from botocore.exceptions import NoCredentialsError
 from django.db import IntegrityError
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -39,6 +40,11 @@ from apps.core.views import _community_visible_posts_queryset
             "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
         },
     },
+    AWS_S3_UPLOAD_ACCESS_KEY_ID="test-access-key",
+    AWS_S3_UPLOAD_SECRET_ACCESS_KEY="test-secret-key",
+    AWS_S3_UPLOAD_REGION="ap-northeast-2",
+    AWS_S3_UPLOAD_BUCKET="hivewiki-community-images",
+    AWS_S3_UPLOAD_PUBLIC_BASE_URL="https://cdn.example.com/hivewiki-community-images",
 )
 class CommunityViewTests(TestCase):
     def setUp(self):
@@ -55,6 +61,19 @@ class CommunityViewTests(TestCase):
         session = self.client.session
         session[SESSION_USER_ID_KEY] = str(self.user.id)
         session.save()
+
+    def _mock_s3_presigned_post(self):
+        mock_s3_client = Mock()
+        mock_s3_client.generate_presigned_post.return_value = {
+            "url": "https://s3.ap-northeast-2.amazonaws.com/hivewiki-community-images",
+            "fields": {
+                "key": "community-images/tmp/test/image.png",
+                "Content-Type": "image/png",
+                "policy": "encoded-policy",
+                "x-amz-signature": "signature",
+            },
+        }
+        return mock_s3_client
 
     def test_nested_reply_validation_error_keeps_reply_branch_visible(self):
         post = Post.objects.create(
@@ -128,6 +147,77 @@ class CommunityViewTests(TestCase):
             f'id="comment-children-{grandchild_comment.id}"',
         )
 
+    @patch("apps.accounts.services.boto3.client")
+    def test_community_image_upload_prepare_returns_presigned_payload(
+        self, mock_boto3_client
+    ):
+        mock_s3_client = self._mock_s3_presigned_post()
+        mock_boto3_client.return_value = mock_s3_client
+
+        response = self.client.post(
+            "/community/image-upload/prepare/",
+            {"filename": "pasted-image.png", "content_type": "image/png"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["fields"]["Content-Type"], "image/png")
+        self.assertTrue(payload["public_url"].startswith("https://cdn.example.com/"))
+        mock_s3_client.generate_presigned_post.assert_called_once()
+        self.assertIn(
+            "community-images/tmp/",
+            mock_s3_client.generate_presigned_post.call_args.kwargs["Key"],
+        )
+
+    def test_community_image_upload_prepare_rejects_non_image(self):
+        response = self.client.post(
+            "/community/image-upload/prepare/",
+            {"filename": "notes.txt", "content_type": "text/plain"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()["error"],
+            "이미지 파일만 업로드할 수 있습니다.",
+        )
+
+    @patch("apps.accounts.services.boto3.client")
+    def test_community_image_upload_prepare_returns_400_when_s3_credentials_missing(
+        self, mock_boto3_client
+    ):
+        mock_s3_client = Mock()
+        mock_s3_client.generate_presigned_post.side_effect = NoCredentialsError()
+        mock_boto3_client.return_value = mock_s3_client
+
+        response = self.client.post(
+            "/community/image-upload/prepare/",
+            {"filename": "pasted-image.png", "content_type": "image/png"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()["error"],
+            "S3 업로드 자격 증명을 찾지 못했습니다. Pod Identity 또는 액세스 키 설정을 확인해 주세요.",
+        )
+
+    def test_community_feed_attaches_thumbnail_from_first_markdown_image(self):
+        Post.objects.create(
+            author_user=self.user,
+            content_markdown=(
+                "![대표 이미지](https://cdn.example.com/community-images/tmp/cover.png)\n\n"
+                "이미지가 있는 게시글입니다."
+            ),
+            status=PostStatus.PUBLISHED,
+        )
+
+        response = self.client.get("/community/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.context["post_items"][0].thumbnail_url,
+            "https://cdn.example.com/community-images/tmp/cover.png",
+        )
+
     def test_community_list_paginates_with_stable_ordering(self):
         created_at = timezone.now()
         created_posts = []
@@ -176,7 +266,8 @@ class CommunityViewTests(TestCase):
 
         get_response = self.client.get(f"/community/{post.id}/edit/")
         self.assertEqual(get_response.status_code, 200)
-        self.assertContains(get_response, "내 게시글 다듬기")
+        self.assertContains(get_response, "게시글 작성")
+        self.assertContains(get_response, "수정 저장")
 
         post_response = self.client.post(
             f"/community/{post.id}/edit/",
@@ -195,6 +286,84 @@ class CommunityViewTests(TestCase):
             list(post.tags.order_by("name").values_list("name", flat=True)),
             ["공유", "수정"],
         )
+
+    def test_community_list_can_filter_posts_by_referenced_wiki(self):
+        referenced_document = WikiDocument.objects.create(
+            title="검색 운영 가이드",
+            slug="search-ops-guide",
+            summary="검색 운영 문서입니다.",
+            status=WikiDocumentStatus.PUBLISHED,
+            updated_at=timezone.now(),
+        )
+        referenced_revision = WikiRevision.objects.create(
+            wiki_document=referenced_document,
+            revision_number=1,
+            content_markdown="## 검색 운영",
+            generation_type=WikiGenerationType.AI,
+            generation_model="gpt-5.5",
+        )
+        referenced_document.current_revision = referenced_revision
+        referenced_document.save(update_fields=["current_revision"])
+
+        other_document = WikiDocument.objects.create(
+            title="다른 문서",
+            slug="other-doc",
+            summary="다른 문서입니다.",
+            status=WikiDocumentStatus.PUBLISHED,
+            updated_at=timezone.now(),
+        )
+        other_revision = WikiRevision.objects.create(
+            wiki_document=other_document,
+            revision_number=1,
+            content_markdown="## 다른 문서",
+            generation_type=WikiGenerationType.AI,
+            generation_model="gpt-5.5",
+        )
+        other_document.current_revision = other_revision
+        other_document.save(update_fields=["current_revision"])
+
+        matched_post = Post.objects.create(
+            author_user=self.user,
+            content_markdown="참조된 문서가 있는 게시글",
+            status=PostStatus.PUBLISHED,
+        )
+        matched_post.wiki_documents.add(referenced_document)
+
+        unmatched_post = Post.objects.create(
+            author_user=self.user,
+            content_markdown="다른 문서를 참조하는 게시글",
+            status=PostStatus.PUBLISHED,
+        )
+        unmatched_post.wiki_documents.add(other_document)
+
+        response = self.client.get("/community/?wiki_slug=search-ops-guide")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "검색 운영 가이드")
+        self.assertEqual(
+            [post.id for post in response.context["post_items"]],
+            [matched_post.id],
+        )
+        self.assertContains(
+            response,
+            "/community/?wiki_slug=search-ops-guide",
+        )
+
+    def test_published_post_is_not_restored_as_compose_draft(self):
+        post = Post.objects.create(
+            author_user=self.user,
+            content_markdown="이미 게시된 글",
+            status=PostStatus.PUBLISHED,
+        )
+
+        response = self.client.get(
+            "/community/", {"compose": "1", "draft": str(post.id)}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.context["active_draft_post"])
+        self.assertEqual(response.context["compose_initial_payload"]["draft_id"], "")
+        self.assertNotContains(response, f'value="{post.id}"', html=False)
 
     def test_author_can_edit_own_comment(self):
         post = Post.objects.create(

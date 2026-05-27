@@ -1,6 +1,8 @@
+import logging
 import math
 import mimetypes
 import secrets
+import ssl
 import time
 import urllib.error
 import urllib.parse
@@ -12,6 +14,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import boto3
+import certifi
 from botocore.exceptions import (
     BotoCoreError,
     ClientError,
@@ -28,6 +31,9 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .models import HiveUser, OAuthAccount, OAuthProvider, UserStatus
+
+logger = logging.getLogger(__name__)
+HTTPS_SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
 SESSION_USER_ID_KEY = "hivewiki_user_id"
 OAUTH_STATE_SESSION_KEY = "oauth_state"
@@ -117,6 +123,21 @@ def build_profile_image_upload_payload(
     filename: str,
     content_type: str,
 ) -> dict:
+    return build_public_image_upload_payload(
+        user=user,
+        filename=filename,
+        content_type=content_type,
+        prefix=settings.AWS_S3_PROFILE_IMAGE_PREFIX,
+    )
+
+
+def build_public_image_upload_payload(
+    *,
+    user: HiveUser,
+    filename: str,
+    content_type: str,
+    prefix: str,
+) -> dict:
     if not _s3_upload_configured():
         raise ProfileImageUploadError("S3 업로드 설정이 아직 완료되지 않았습니다.")
 
@@ -129,7 +150,7 @@ def build_profile_image_upload_payload(
         content_type=content_type,
     )
 
-    prefix = settings.AWS_S3_PROFILE_IMAGE_PREFIX.strip("/").replace("//", "/")
+    prefix = (prefix or "").strip("/").replace("//", "/")
     file_extension = Path(normalized_filename).suffix.lower()[:10]
     object_key = (
         f"{prefix}/{user.id}/{secrets.token_urlsafe(16)}{file_extension}"
@@ -561,6 +582,36 @@ def _read_json_response(response) -> dict:
     return loads(response.read().decode("utf-8"))
 
 
+def _parse_oauth_error_response(raw_body: str) -> str:
+    body = (raw_body or "").strip()
+    if not body:
+        return ""
+
+    try:
+        payload = loads(body)
+    except ValueError:
+        parsed = urllib.parse.parse_qs(body)
+        if not parsed:
+            return body[:200]
+        error = (parsed.get("error") or [""])[0].strip()
+        description = (parsed.get("error_description") or [""])[0].strip() or (
+            parsed.get("error_summary") or [""]
+        )[0].strip()
+        return ": ".join(part for part in [error, description] if part)[:200]
+
+    if not isinstance(payload, dict):
+        return body[:200]
+
+    error = str(payload.get("error") or "").strip()
+    description = str(
+        payload.get("error_description")
+        or payload.get("error_summary")
+        or payload.get("message")
+        or ""
+    ).strip()
+    return ": ".join(part for part in [error, description] if part)[:200]
+
+
 def _post_form(url: str, data: dict, headers: dict[str, str] | None = None) -> dict:
     encoded = urllib.parse.urlencode(data).encode("utf-8")
     request = urllib.request.Request(
@@ -569,13 +620,21 @@ def _post_form(url: str, data: dict, headers: dict[str, str] | None = None) -> d
         headers=headers or {},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=10) as response:
+    with urllib.request.urlopen(
+        request,
+        timeout=10,
+        context=HTTPS_SSL_CONTEXT,
+    ) as response:
         return _read_json_response(response)
 
 
 def _get_json(url: str, headers: dict[str, str] | None = None) -> dict | list:
     request = urllib.request.Request(url, headers=headers or {}, method="GET")
-    with urllib.request.urlopen(request, timeout=10) as response:
+    with urllib.request.urlopen(
+        request,
+        timeout=10,
+        context=HTTPS_SSL_CONTEXT,
+    ) as response:
         return _read_json_response(response)
 
 
@@ -622,7 +681,27 @@ def exchange_oauth_code_for_profile(
                 "Content-Type": "application/x-www-form-urlencoded",
             },
         )
+    except urllib.error.HTTPError as exc:
+        detail = _parse_oauth_error_response(
+            exc.read().decode("utf-8", errors="ignore")
+        )
+        logger.warning(
+            "oauth_token_exchange_failed provider=%s status_code=%s callback_url=%s detail=%s",
+            provider,
+            exc.code,
+            callback_url,
+            detail or "unknown",
+        )
+        if detail:
+            raise OAuthError(f"OAuth 토큰 교환에 실패했습니다. {detail}") from exc
+        raise OAuthError("OAuth 토큰 교환에 실패했습니다.") from exc
     except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+        logger.warning(
+            "oauth_token_exchange_failed provider=%s callback_url=%s reason=%s",
+            provider,
+            callback_url,
+            exc.__class__.__name__,
+        )
         raise OAuthError("OAuth 토큰 교환에 실패했습니다.") from exc
 
     access_token = token_response.get("access_token")

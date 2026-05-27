@@ -1,3 +1,5 @@
+import io
+import urllib.error
 from datetime import timedelta
 from unittest.mock import Mock, patch
 
@@ -22,6 +24,7 @@ from apps.accounts.notifications import (
     mark_notification_read,
 )
 from apps.accounts.services import (
+    OAUTH_STATE_SESSION_KEY,
     SESSION_USER_ID_KEY,
     TIMEZONE_SESSION_KEY,
     read_pending_oauth_confirmation,
@@ -973,6 +976,44 @@ class AuthFlowTests(TestCase):
         self.assertFalse(
             any(
                 "보안을 위해 비밀번호 기반 로그인은 중지합니다." in str(message)
+                for message in messages
+            )
+        )
+
+    @patch("apps.accounts.services._post_form")
+    def test_oauth_callback_surfaces_provider_token_exchange_error_detail(
+        self, mock_post_form
+    ):
+        session = self.client.session
+        session[OAUTH_STATE_SESSION_KEY] = {
+            "provider": OAuthProvider.GOOGLE,
+            "state": "test-state",
+            "next_url": "",
+            "action": "login",
+            "link_user_id": "",
+        }
+        session.save()
+        mock_post_form.side_effect = urllib.error.HTTPError(
+            url="https://oauth2.googleapis.com/token",
+            code=400,
+            msg="Bad Request",
+            hdrs=None,
+            fp=io.BytesIO(
+                b'{"error":"invalid_grant","error_description":"Bad Request"}'
+            ),
+        )
+
+        response = self.client.get(
+            "/auth/oauth/google/callback/",
+            {"code": "auth-code", "state": "test-state"},
+        )
+
+        self.assertRedirects(response, "/auth/login/")
+        messages = list(response.wsgi_request._messages)
+        self.assertTrue(
+            any(
+                "OAuth 토큰 교환에 실패했습니다. invalid_grant: Bad Request"
+                in str(message)
                 for message in messages
             )
         )

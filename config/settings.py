@@ -46,6 +46,10 @@ AWS_S3_UPLOAD_BUCKET = env("AWS_S3_UPLOAD_BUCKET", default="")
 AWS_S3_UPLOAD_ENDPOINT_URL = env("AWS_S3_UPLOAD_ENDPOINT_URL", default="")
 AWS_S3_UPLOAD_PUBLIC_BASE_URL = env("AWS_S3_UPLOAD_PUBLIC_BASE_URL", default="")
 AWS_S3_PROFILE_IMAGE_PREFIX = env("AWS_S3_PROFILE_IMAGE_PREFIX", default="profiles")
+AWS_S3_COMMUNITY_IMAGE_PREFIX = env(
+    "AWS_S3_COMMUNITY_IMAGE_PREFIX",
+    default="community-images/tmp",
+)
 
 
 # Application definition
@@ -63,6 +67,9 @@ INSTALLED_APPS = [
     "apps.core",
     "apps.accounts",
 ]
+
+TAILWIND_APP_NAME = "theme"
+TAILWIND_USE_STANDALONE_BINARY = True
 
 MIDDLEWARE = [
     "config.healthchecks.HealthcheckHostNormalizationMiddleware",

@@ -4,6 +4,8 @@ from django.utils import timezone
 
 from apps.core.models import (
     ChunkEmbedding,
+    Post,
+    PostStatus,
     Source,
     SourceChunk,
     SourceDocument,
@@ -89,8 +91,7 @@ class WikiViewTests(TestCase):
         self.assertContains(response, "data-toc-link")
         self.assertContains(response, 'href="#선정-기준"')
         self.assertContains(response, "문서 공유")
-        self.assertContains(response, "읽기용 복사")
-        self.assertContains(response, "에이전트용 복사")
+        self.assertContains(response, "본문 복사")
         self.assertNotContains(response, "슬러그")
         self.assertContains(
             response,
@@ -98,10 +99,11 @@ class WikiViewTests(TestCase):
         )
         self.assertContains(
             response,
-            'data-copy-label="에이전트용 사본"',
+            'data-copy-label="본문"',
         )
         self.assertContains(response, 'data-copy-success-text="링크 복사됨!"')
-        self.assertContains(response, 'id="human-copy"')
+        self.assertContains(response, 'data-copy-success-text="본문 복사됨!"')
+        self.assertContains(response, 'id="body-copy"')
         self.assertNotContains(response, 'style="')
 
     def test_wiki_detail_formats_inline_sources_as_citations(self):
@@ -226,6 +228,76 @@ class WikiViewTests(TestCase):
             response.context["related_wiki_items"][0]["title"],
             "복수전공 신청 안내",
         )
+
+    def test_wiki_detail_links_to_posts_referencing_current_document(self):
+        document = WikiDocument.objects.create(
+            title="커뮤니티 운영 원칙",
+            slug="community-ops-guide",
+            summary="운영 원칙을 정리한 문서입니다.",
+            status=WikiDocumentStatus.PUBLISHED,
+            updated_at=timezone.now(),
+        )
+        revision = WikiRevision.objects.create(
+            wiki_document=document,
+            revision_number=1,
+            content_markdown="## 운영 원칙",
+            generation_type=WikiGenerationType.AI,
+            generation_model="gpt-5.5",
+        )
+        document.current_revision = revision
+        document.save(update_fields=["current_revision"])
+
+        post = Post.objects.create(
+            content_markdown="이 문서를 참고한 게시글입니다.",
+            status=PostStatus.PUBLISHED,
+        )
+        post.wiki_documents.add(document)
+
+        response = self.client.get("/wiki/community-ops-guide/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "연결된 게시글")
+        self.assertContains(response, "참조 게시글 보기")
+        self.assertContains(response, "/community/?wiki_slug=community-ops-guide")
+        self.assertContains(response, "1건")
+
+    def test_wiki_detail_shows_only_three_recent_referencing_posts(self):
+        document = WikiDocument.objects.create(
+            title="문서 수집 원칙",
+            slug="document-collection-guide",
+            summary="문서 수집 원칙입니다.",
+            status=WikiDocumentStatus.PUBLISHED,
+            updated_at=timezone.now(),
+        )
+        revision = WikiRevision.objects.create(
+            wiki_document=document,
+            revision_number=1,
+            content_markdown="## 문서 수집 원칙",
+            generation_type=WikiGenerationType.AI,
+            generation_model="gpt-5.5",
+        )
+        document.current_revision = revision
+        document.save(update_fields=["current_revision"])
+
+        posts = []
+        for index in range(4):
+            post = Post.objects.create(
+                content_markdown=f"참조 게시글 {index}",
+                status=PostStatus.PUBLISHED,
+                created_at=timezone.now() + timezone.timedelta(minutes=index),
+                updated_at=timezone.now() + timezone.timedelta(minutes=index),
+            )
+            post.wiki_documents.add(document)
+            posts.append(post)
+
+        response = self.client.get("/wiki/document-collection-guide/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            [post.id for post in response.context["referencing_posts"]],
+            [posts[3].id, posts[2].id, posts[1].id],
+        )
+        self.assertContains(response, "게시글 더보기")
 
     def test_wiki_detail_prioritizes_embedding_similar_documents(self):
         primary_source = Source.objects.create(

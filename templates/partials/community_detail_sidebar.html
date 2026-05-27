@@ -1,0 +1,48 @@
+{% if linked_wiki_documents %}
+    <section class="rounded-[2rem] bg-surface-container-low p-6">
+        <div class="text-sm font-semibold text-primary">관련 위키 문서</div>
+        <div class="mt-4 space-y-4">
+            {% for linked_document in linked_wiki_documents %}
+                <article class="rounded-[1.5rem] bg-surface-container-lowest p-4 ambient-shadow">
+                    <a href="{% url 'wiki_detail' linked_document.slug %}"
+                       class="block font-headline text-xl font-extrabold tracking-tight text-on-surface">{{ linked_document.title }}</a>
+                    <p class="mt-2 text-sm leading-7 text-on-surface-variant">{{ linked_document.summary }}</p>
+                </article>
+            {% endfor %}
+        </div>
+    </section>
+{% endif %}
+<section class="rounded-[2rem] bg-surface-container-low p-6">
+    <div class="text-sm font-semibold text-primary">연관 게시글</div>
+    <div class="mt-4 space-y-4">
+        {% for item in related_posts %}
+            <a href="{{ item.url }}"
+               class="block rounded-[1.5rem] bg-surface-container-lowest p-4 ambient-shadow transition hover:-translate-y-0.5 hover:bg-surface-container-high">
+                <div class="flex items-center justify-between gap-3 text-xs text-stone-400">
+                    <span class="font-semibold text-on-surface">{{ item.author }}</span>
+                    <span>{{ item.comment_count }} comments</span>
+                </div>
+                <p class="mt-3 line-clamp-3 text-sm leading-7 text-on-surface-variant">{{ item.summary }}</p>
+            </a>
+        {% endfor %}
+    </div>
+</section>
+<section class="rounded-[2rem] bg-surface-container-low p-6">
+    <div class="text-sm font-semibold text-primary">Post Meta</div>
+    <div class="mt-4 space-y-3 text-sm leading-7 text-on-surface-variant">
+        <div>
+            <div class="text-xs uppercase tracking-[0.2em] text-stone-400">writer</div>
+            <div class="mt-1 font-semibold text-on-surface">{{ post.author }}</div>
+        </div>
+        <div>
+            <div class="text-xs uppercase tracking-[0.2em] text-stone-400">posted at</div>
+            <div class="mt-1 timezone-sensitive font-semibold text-on-surface"
+                 data-local-datetime="{{ post.created_at|date:'c' }}"
+                 data-local-format="datetime">{{ post.created_at|date:"Y.m.d H:i" }}</div>
+        </div>
+        <div>
+            <div class="text-xs uppercase tracking-[0.2em] text-stone-400">comments</div>
+            <div class="mt-1 font-semibold text-on-surface">{{ comment_total_count }}</div>
+        </div>
+    </div>
+</section>

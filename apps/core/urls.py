@@ -87,9 +87,19 @@ urlpatterns = [
         name="community_comment_children",
     ),
     path(
+        "community/<uuid:post_id>/comments/<uuid:comment_id>/reply-form/",
+        views.community_comment_reply_form,
+        name="community_comment_reply_form",
+    ),
+    path(
         "community/wiki-picker/",
         views.community_wiki_picker,
         name="community_wiki_picker",
+    ),
+    path(
+        "community/image-upload/prepare/",
+        views.community_image_upload_prepare,
+        name="community_image_upload_prepare",
     ),
     path("wiki/", views.wiki_home, name="wiki_home"),
     path(

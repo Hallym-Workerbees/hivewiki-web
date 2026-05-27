@@ -1,5 +1,5 @@
 {% url 'mypage_notifications' as mypage_notifications_url %}
-<a id="notification-link-sidebar"
+<a id="{% if sidebar_mode == 'mobile' %}notification-link-sidebar-mobile{% else %}notification-link-sidebar{% endif %}"
    href="{% url 'mypage_notifications' %}"
    class="flex items-center justify-between rounded-2xl px-4 py-3 transition {% if request.path == mypage_notifications_url %}bg-surface-container-high font-bold text-primary{% else %}text-on-surface-variant hover:bg-surface-container-high{% endif %}"
    {% if oob %}hx-swap-oob="outerHTML"{% endif %}>

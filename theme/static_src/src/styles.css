@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@source "../../../templates/**/*.html";
+@source "../../../apps/**/*.py";
+@source "../../../static/js/**/*.js";
+
+@theme {
+  --color-primary: #785900;
+  --color-primary-container: #ffc107;
+  --color-on-primary-container: #6d5100;
+  --color-secondary: #745b1f;
+  --color-secondary-container: #ffdb92;
+  --color-on-secondary-container: #795f23;
+  --color-tertiary: #006877;
+  --color-surface: #fcf9f8;
+  --color-surface-bright: #fcf9f8;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f6f3f2;
+  --color-surface-container: #f0edec;
+  --color-surface-container-high: #ebe7e7;
+  --color-surface-container-highest: #e5e2e1;
+  --color-on-surface: #1c1b1b;
+  --color-on-surface-variant: #4f4632;
+  --color-outline-variant: #d4c5ab;
+  --color-error: #ba1a1a;
+  --color-error-container: #ffdad6;
+  --font-headline: "Manrope", sans-serif;
+  --font-body: "Inter", sans-serif;
+  --shadow-ambient: 0 12px 32px rgba(28, 27, 27, 0.04);
+}

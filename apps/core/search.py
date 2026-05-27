@@ -35,7 +35,12 @@ def get_wiki_search_queryset(*, query=""):
             documents = documents.annotate(
                 search_vector=search_vector,
                 search_rank=SearchRank(search_vector, search_query),
-            ).filter(search_vector=search_query)
+            ).filter(
+                Q(search_vector=search_query)
+                | Q(title__icontains=normalized_query)
+                | Q(summary__icontains=normalized_query)
+                | Q(current_revision__content_markdown__icontains=normalized_query)
+            )
             documents = documents.order_by("-search_rank", "-updated_at")
         else:
             documents = documents.filter(
@@ -87,10 +92,10 @@ def get_post_search_results(*, query="", limit=12):
     normalized_query = query.strip()
     if normalized_query:
         if connection.vendor == "postgresql":
-            search_vector = (
-                SearchVector("title_cache", weight="A", config="simple")
-                + SearchVector("summary_cache", weight="B", config="simple")
-                + SearchVector("body_markdown_cache", weight="C", config="simple")
+            search_vector = SearchVector(
+                "body_markdown_cache",
+                weight="A",
+                config="simple",
             )
             search_query = SearchQuery(
                 normalized_query,
@@ -102,20 +107,13 @@ def get_post_search_results(*, query="", limit=12):
                 search_rank=SearchRank(search_vector, search_query),
             ).filter(
                 Q(search_vector=search_query)
-                | Q(tags__name__icontains=normalized_query)
-                | Q(wiki_documents__title__icontains=normalized_query)
+                | Q(body_markdown_cache__icontains=normalized_query)
             )
-            posts = posts.distinct().order_by(
+            posts = posts.order_by(
                 "-search_rank", "-comment_count", "-created_at", "-id"
             )
         else:
-            posts = posts.filter(
-                Q(title_cache__icontains=normalized_query)
-                | Q(summary_cache__icontains=normalized_query)
-                | Q(body_markdown_cache__icontains=normalized_query)
-                | Q(tags__name__icontains=normalized_query)
-                | Q(wiki_documents__title__icontains=normalized_query)
-            ).distinct()
+            posts = posts.filter(Q(body_markdown_cache__icontains=normalized_query))
 
     total_count = posts.count()
     return {

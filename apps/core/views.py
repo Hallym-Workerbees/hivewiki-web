@@ -2,11 +2,12 @@ import logging
 import re
 from urllib.parse import urlencode
 
+from django.conf import settings
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db import connection, transaction
 from django.db.models import Case, Count, IntegerField, Prefetch, Q, Value, When
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -19,9 +20,13 @@ from apps.accounts.notifications import (
     notify_comment_liked,
     notify_post_liked,
 )
-from apps.accounts.services import purge_user_sessions
+from apps.accounts.services import (
+    ProfileImageUploadError,
+    build_public_image_upload_payload,
+    purge_user_sessions,
+)
 
-from .community_content import extract_linked_wiki_slugs
+from .community_content import extract_first_image_url, extract_linked_wiki_slugs
 from .forms import CommentForm, PostForm, SourceForm, TagForm
 from .markdown_rendering import get_cached_revision_render
 from .models import (
@@ -144,13 +149,15 @@ def community_list(request):
     if request.method == "POST" and request.current_user is None:
         return redirect(_build_login_url(request.get_full_path()))
     selected_tag_slug = request.GET.get("tag", "").strip()
+    selected_wiki_slug = request.GET.get("wiki_slug", "").strip()
     page_number = request.GET.get("page", "1").strip() or "1"
-    source_wiki_slug = request.GET.get("wiki_slug", "").strip()
+    source_wiki_slug = selected_wiki_slug if request.GET.get("compose") == "1" else ""
     selected_draft_post_id = request.GET.get("draft", "").strip()
     compose_requested = request.GET.get("compose") == "1" or request.method == "POST"
     prefilled_wiki_document = None
     initial_form_data = None
     wiki_document_queryset = _community_wiki_document_queryset()
+    selected_wiki_document = None
     selected_draft_post = _get_user_draft_post(
         request.current_user,
         selected_draft_post_id or request.POST.get("draft_id", "").strip(),
@@ -158,10 +165,12 @@ def community_list(request):
     if compose_requested and request.current_user is None:
         return redirect(_build_login_url(request.get_full_path()))
     if request.method == "GET":
-        if source_wiki_slug:
-            prefilled_wiki_document = wiki_document_queryset.filter(
-                slug=source_wiki_slug
+        if selected_wiki_slug:
+            selected_wiki_document = wiki_document_queryset.filter(
+                slug=selected_wiki_slug
             ).first()
+        if source_wiki_slug:
+            prefilled_wiki_document = selected_wiki_document
         if selected_draft_post is not None:
             initial_form_data = _build_post_form_initial_from_post(selected_draft_post)
         if prefilled_wiki_document is not None:
@@ -189,6 +198,7 @@ def community_list(request):
             user=request.current_user,
             include_own_drafts=False,
             selected_tag_slug=selected_tag_slug,
+            selected_wiki_slug=selected_wiki_slug,
         ),
         page_number=page_number,
     )
@@ -200,6 +210,7 @@ def community_list(request):
         _build_community_feed_url(
             page=post_page.next_page_number(),
             selected_tag_slug=selected_tag_slug,
+            selected_wiki_slug=selected_wiki_slug,
         )
         if post_page.has_next()
         else ""
@@ -238,6 +249,7 @@ def community_list(request):
         draft_post.compose_url = _build_community_list_url(
             compose=True,
             selected_tag_slug=selected_tag_slug,
+            selected_wiki_slug=selected_wiki_slug,
             source_wiki_slug=source_wiki_slug,
             draft_post_id=str(draft_post.pk),
         )
@@ -259,6 +271,8 @@ def community_list(request):
             "compose_tag_options": list(_community_tag_queryset()[:40]),
             "selected_tag_names": selected_tag_names,
             "selected_tag_slug": selected_tag_slug,
+            "selected_wiki_slug": selected_wiki_slug,
+            "selected_wiki_document": selected_wiki_document,
             "compose_requested": compose_requested,
             "prefilled_wiki_document": prefilled_wiki_document,
             "featured_wiki_documents": featured_wiki_documents,
@@ -278,6 +292,7 @@ def community_list(request):
             "compose_open_url": _build_community_list_url(
                 compose=True,
                 selected_tag_slug=selected_tag_slug,
+                selected_wiki_slug=selected_wiki_slug,
                 source_wiki_slug=source_wiki_slug,
             )
             if request.current_user
@@ -285,12 +300,14 @@ def community_list(request):
                 _build_community_list_url(
                     compose=True,
                     selected_tag_slug=selected_tag_slug,
+                    selected_wiki_slug=selected_wiki_slug,
                     source_wiki_slug=source_wiki_slug,
                 )
             ),
             "compose_close_url": _build_community_list_url(
                 compose=False,
                 selected_tag_slug=selected_tag_slug,
+                selected_wiki_slug=selected_wiki_slug,
             ),
         },
     )
@@ -302,6 +319,7 @@ def community_detail(request, post_id):
     )
     comment_form = CommentForm(initial={"parent_comment_id": ""})
     focus_comment_id = request.GET.get("comment", "").strip()
+    reply_target_id = request.GET.get("reply_to", "").strip()
     return render(
         request,
         "pages/community/detail.html",
@@ -310,6 +328,7 @@ def community_detail(request, post_id):
             comment_form=comment_form,
             current_user=request.current_user,
             focus_comment_id=focus_comment_id,
+            reply_target_id=reply_target_id,
         ),
     )
 
@@ -559,6 +578,26 @@ def community_comment_children(request, post_id, comment_id):
 
 
 @login_required
+def community_comment_reply_form(request, post_id, comment_id):
+    post = get_object_or_404(
+        _community_visible_posts_queryset(user=request.current_user), pk=post_id
+    )
+    comment = get_object_or_404(
+        Comment.objects.filter(post=post, deleted_at__isnull=True),
+        pk=comment_id,
+    )
+    return render(
+        request,
+        "partials/community_comment_reply_form.html",
+        {
+            "post": post,
+            "comment": comment,
+            "comment_form": CommentForm(initial={"parent_comment_id": str(comment.pk)}),
+        },
+    )
+
+
+@login_required
 def community_wiki_picker(request):
     query = request.GET.get("q", "").strip()
     selected_wiki_document_ids = request.GET.getlist("wiki_documents")
@@ -583,6 +622,25 @@ def community_wiki_picker(request):
             "query": query,
         },
     )
+
+
+@login_required
+@require_POST
+def community_image_upload_prepare(request):
+    try:
+        payload = build_public_image_upload_payload(
+            user=request.current_user,
+            filename=request.POST.get("filename", ""),
+            content_type=request.POST.get("content_type", ""),
+            prefix=getattr(
+                settings,
+                "AWS_S3_COMMUNITY_IMAGE_PREFIX",
+                "community-images/tmp",
+            ),
+        )
+    except ProfileImageUploadError as exc:
+        return JsonResponse({"error": str(exc)}, status=400)
+    return JsonResponse(payload)
 
 
 def wiki_home(request):
@@ -709,8 +767,11 @@ def wiki_detail(request, slug):
             "citations": rendered_revision["citations"],
             "toc_items": rendered_revision["toc_items"],
             "share_url": share_url,
-            "copy_human_text": _build_human_copy(document, revision, share_url),
-            "copy_agent_text": _build_agent_copy(document, revision, share_url),
+            "copy_body_text": _build_body_copy(document, revision),
+            "mobile_right_drawer_label": "목차"
+            if rendered_revision["toc_items"]
+            else "",
+            "enable_math_rendering": True,
             "compose_post_url": _build_community_compose_url(document),
             "compose_open_url": _build_wiki_detail_compose_url(document)
             if request.current_user
@@ -728,6 +789,12 @@ def wiki_detail(request, slug):
             "selected_wiki_documents": selected_wiki_documents,
             "locked_wiki_document_ids": [str(document.pk)],
             "related_wiki_items": _build_wiki_card_items(related_wiki_documents),
+            "referencing_post_count": _get_referencing_post_count(document),
+            "referencing_posts": _get_recent_referencing_posts(document, limit=3),
+            "referencing_posts_url": _build_community_list_url(
+                compose=False,
+                selected_wiki_slug=document.slug,
+            ),
             "compose_wiki_search_url": reverse("community_wiki_picker"),
             "tag_options": list(_community_tag_queryset()[:12]),
             "compose_tag_options": list(_community_tag_queryset()[:40]),
@@ -812,51 +879,19 @@ def integrated_search(request):
     )
 
 
-def _build_human_copy(document, revision, share_url):
-    body = (
+def _build_body_copy(document, revision):
+    return (
         strip_leading_title_heading(revision.content_markdown, document.title).strip()
         if revision
         else ""
     )
-    parts = [
-        document.title,
-        "",
-        document.summary.strip(),
-        "",
-        f"링크: {share_url}",
-    ]
-    if body:
-        parts.extend(["", body])
-    return "\n".join(parts).strip()
-
-
-def _build_agent_copy(document, revision, share_url):
-    body = (
-        strip_leading_title_heading(revision.content_markdown, document.title).strip()
-        if revision
-        else ""
-    )
-    lines = [
-        "wiki_context:",
-        f"  title: {document.title}",
-        f"  url: {share_url}",
-        "  summary: |",
-        *[f"    {line}" for line in document.summary.strip().splitlines()],
-    ]
-    if body:
-        lines.extend(
-            [
-                "content_markdown: |",
-                *[f"  {line}" for line in body.splitlines()],
-            ]
-        )
-    return "\n".join(lines).strip()
 
 
 def _community_visible_posts_queryset(
     *,
     user,
     selected_tag_slug="",
+    selected_wiki_slug="",
     include_own_drafts=True,
 ):
     visible_filter = Q(status=PostStatus.PUBLISHED)
@@ -879,6 +914,8 @@ def _community_visible_posts_queryset(
     )
     if selected_tag_slug:
         queryset = queryset.filter(tags__slug=selected_tag_slug)
+    if selected_wiki_slug:
+        queryset = queryset.filter(wiki_documents__slug=selected_wiki_slug)
     return queryset.distinct()
 
 
@@ -1210,7 +1247,7 @@ def _get_selected_tag_names(selected_tag_values):
 
 def _build_post_form_initial_from_post(post):
     return {
-        "draft_id": str(post.pk),
+        "draft_id": str(post.pk) if post.status == PostStatus.DRAFT else "",
         "body_markdown": post.body_markdown,
         "tag_names": ", ".join(tag.name for tag in post.tags.order_by("name")),
         "wiki_documents": [str(document.pk) for document in post.wiki_documents.all()],
@@ -1425,6 +1462,7 @@ def _build_community_detail_context(
         "is_draft": post.status == PostStatus.DRAFT,
         "linked_wiki_documents": linked_wiki_documents,
         "related_posts": related_posts,
+        "mobile_right_drawer_label": "게시글 정보",
         "editing_post": editing_post,
         "post_edit_form": post_edit_form,
         "editing_comment_id": editing_comment_id,
@@ -1596,6 +1634,7 @@ def _attach_linked_wiki_documents(posts):
     if not slugs:
         for post in posts:
             post.linked_wiki_documents = explicit_documents_by_post_id[str(post.pk)]
+            post.thumbnail_url = extract_first_image_url(post.content_markdown)
         return
 
     documents_by_slug = {
@@ -1620,6 +1659,7 @@ def _attach_linked_wiki_documents(posts):
             linked_documents.append(document)
             seen_document_ids.add(document_id)
         post.linked_wiki_documents = linked_documents
+        post.thumbnail_url = extract_first_image_url(post.content_markdown)
 
 
 def _build_community_compose_url(document):
@@ -1639,10 +1679,12 @@ def _build_wiki_detail_compose_url(document, draft_post_id=""):
     )
 
 
-def _build_community_feed_url(*, page, selected_tag_slug=""):
+def _build_community_feed_url(*, page, selected_tag_slug="", selected_wiki_slug=""):
     params = {"page": page}
     if selected_tag_slug:
         params["tag"] = selected_tag_slug
+    if selected_wiki_slug:
+        params["wiki_slug"] = selected_wiki_slug
     return f"{reverse('community_list')}?{urlencode(params)}"
 
 
@@ -1662,12 +1704,15 @@ def _build_community_list_url(
     *,
     compose,
     selected_tag_slug="",
+    selected_wiki_slug="",
     source_wiki_slug="",
     draft_post_id="",
 ):
     params = {}
     if selected_tag_slug:
         params["tag"] = selected_tag_slug
+    if selected_wiki_slug:
+        params["wiki_slug"] = selected_wiki_slug
     if compose:
         params["compose"] = 1
         if source_wiki_slug:
@@ -1679,6 +1724,30 @@ def _build_community_list_url(
     if not params:
         return base_url
     return f"{base_url}?{urlencode(params)}"
+
+
+def _get_referencing_post_count(document):
+    return (
+        Post.objects.filter(
+            status=PostStatus.PUBLISHED,
+            deleted_at__isnull=True,
+            wiki_documents=document,
+        )
+        .distinct()
+        .count()
+    )
+
+
+def _get_recent_referencing_posts(document, *, limit):
+    posts = list(
+        _community_visible_posts_queryset(
+            user=None,
+            include_own_drafts=False,
+            selected_wiki_slug=document.slug,
+        )[:limit]
+    )
+    _attach_linked_wiki_documents(posts)
+    return posts
 
 
 def _build_admin_content_querystring(request, **updates):

@@ -2,6 +2,11 @@
 {% block title %}
     HiveWiki | {{ document.title }}
 {% endblock title %}
+{% block mobile_right_drawer_content %}
+    {% if toc_items %}
+        {% include "partials/wiki_toc_nav.html" %}
+    {% endif %}
+{% endblock mobile_right_drawer_content %}
 {% block app_content %}
     <section class="mx-auto max-w-7xl space-y-8">
         {% include "partials/section_header.html" with eyebrow="Wiki" title=document.title description=document.summary href="/wiki/" link_text="목록으로" %}
@@ -39,13 +44,13 @@
                             </span>
                         </button>
                         <button type="button"
-                                class="inline-flex min-w-[10.75rem] items-center justify-center rounded-full bg-surface-container-high px-4 py-2.5 text-sm font-semibold text-on-surface transition hover:-translate-y-0.5 hover:bg-surface-container-highest"
+                                class="inline-flex min-w-[9.75rem] items-center justify-center rounded-full bg-stone-950 px-4 py-2.5 text-sm font-semibold text-stone-50 transition hover:-translate-y-0.5 hover:bg-stone-800"
                                 data-copy-trigger
-                                data-copy-label="읽기용 사본"
-                                data-copy-source="human-copy"
-                                data-copy-success-text="읽기용 복사됨!">
+                                data-copy-label="본문"
+                                data-copy-source="body-copy"
+                                data-copy-success-text="본문 복사됨!">
                             <span class="inline-flex items-center gap-2">
-                                <svg class="h-4 w-4 text-on-surface-variant"
+                                <svg class="h-4 w-4 text-stone-300"
                                      viewBox="0 0 24 24"
                                      fill="none"
                                      stroke="currentColor"
@@ -56,37 +61,14 @@
                                     <path d="M6 4.5h12a1.5 1.5 0 0 1 1.5 1.5v11.5H8a2.5 2.5 0 0 0-2.5 2.5V6A1.5 1.5 0 0 1 7 4.5" />
                                     <path d="M8 17.5h11.5" />
                                 </svg>
-                                <span class="inline-block w-[7.25rem] text-left" data-copy-label-text>읽기용 복사</span>
-                            </span>
-                        </button>
-                        <button type="button"
-                                class="inline-flex min-w-[12.25rem] items-center justify-center rounded-full bg-stone-950 px-4 py-2.5 text-sm font-semibold text-stone-50 transition hover:-translate-y-0.5 hover:bg-stone-800"
-                                data-copy-trigger
-                                data-copy-label="에이전트용 사본"
-                                data-copy-source="agent-copy"
-                                data-copy-success-text="에이전트용 복사됨!">
-                            <span class="inline-flex items-center gap-2">
-                                <svg class="h-4 w-4 text-stone-300"
-                                     viewBox="0 0 24 24"
-                                     fill="none"
-                                     stroke="currentColor"
-                                     stroke-width="2"
-                                     stroke-linecap="round"
-                                     stroke-linejoin="round"
-                                     aria-hidden="true">
-                                    <rect x="5" y="3.5" width="14" height="17" rx="2.5" />
-                                    <path d="M9 3.5h6" />
-                                    <path d="M9 11.5l2 2 4-4" />
-                                </svg>
-                                <span class="inline-block w-[8.75rem] text-left" data-copy-label-text>에이전트용 복사</span>
+                                <span class="inline-block w-[5rem] text-left" data-copy-label-text>본문 복사</span>
                             </span>
                         </button>
                         {% include "partials/wiki_bookmark_button.html" with htmx_enabled=True %}
                     </div>
                 </div>
                 <textarea id="share-url-copy" hidden readonly>{{ share_url }}</textarea>
-                <textarea id="human-copy" hidden readonly>{{ copy_human_text }}</textarea>
-                <textarea id="agent-copy" hidden readonly>{{ copy_agent_text }}</textarea>
+                <textarea id="body-copy" hidden readonly>{{ copy_body_text }}</textarea>
                 {% if revision %}
                     <article class="reading-prose prose prose-stone mt-8 max-w-none leading-8 text-on-surface">
                         {{ rendered_markdown|safe }}
@@ -108,10 +90,10 @@
                                         <div class="flex items-start gap-4">
                                             <span class="wiki-citation-pill">{{ citation.index }}</span>
                                             <div class="min-w-0 flex-1">
-                                                <div class="font-semibold text-on-surface">{{ citation.title }}</div>
                                                 <a href="{{ citation.url }}"
-                                                   class="mt-2 block break-all text-sm text-primary underline decoration-primary/40 underline-offset-2 transition hover:text-primary/80"
-                                                   rel="noopener noreferrer">{{ citation.url }}</a>
+                                                   class="font-semibold text-on-surface underline decoration-primary/30 underline-offset-2 transition hover:text-primary"
+                                                   rel="noopener noreferrer">{{ citation.title }}</a>
+                                                <div class="mt-2 break-all text-sm text-on-surface-variant">{{ citation.url }}</div>
                                             </div>
                                         </div>
                                     </li>
@@ -120,7 +102,7 @@
                         </section>
                     {% endif %}
                     {% if related_wiki_items %}
-                        <section class="mt-8 border-t border-outline-variant/70 pt-6">
+                        <section class="mt-8 border-t border-outline-variant/70 pt-6 xl:hidden">
                             <div class="flex flex-wrap items-center justify-between gap-3">
                                 <div>
                                     <h2 class="font-headline text-2xl font-extrabold tracking-tight text-on-surface">연관 위키</h2>
@@ -137,29 +119,18 @@
                             </div>
                         </section>
                     {% endif %}
+                    <div class="mt-8 xl:hidden">{% include "partials/wiki_referencing_posts_card.html" %}</div>
                 {% else %}
                     {% include "partials/empty_state.html" with title="표시할 리비전이 없습니다" description="현재 문서에 연결된 최신 리비전이 없습니다." %}
                 {% endif %}
             </div>
-            {% if toc_items %}
-                <aside class="hidden xl:block">
-                    <div class="sticky top-28 rounded-[1.5rem] bg-surface-container-low p-5">
-                        <nav data-toc-nav>
-                            <ul class="space-y-2 text-sm text-on-surface-variant">
-                                {% for item in toc_items %}
-                                    <li>
-                                        <a href="#{{ item.id }}"
-                                           class="block rounded-xl px-3 py-2 transition hover:bg-surface-container-high hover:text-on-surface {% if item.toc_level == 1 %}pl-3{% elif item.toc_level == 2 %}pl-4{% elif item.toc_level == 3 %}pl-6{% elif item.toc_level == 4 %}pl-8{% elif item.toc_level == 5 %}pl-10{% else %}pl-12{% endif %}"
-                                           data-toc-link
-                                           data-toc-target="{{ item.id }}">
-                                            <span class="inline-flex min-w-[2.25rem] text-stone-400">{{ item.label }}</span>
-                                            <span>{{ item.text }}</span>
-                                        </a>
-                                    </li>
-                                {% endfor %}
-                            </ul>
-                        </nav>
-                    </div>
+            {% if toc_items or related_wiki_items or referencing_posts_url %}
+                <aside class="sticky top-28 hidden space-y-4 self-start xl:block">
+                    {% if toc_items %}
+                        <div class="rounded-[1.5rem] bg-surface-container-low p-5">{% include "partials/wiki_toc_nav.html" %}</div>
+                    {% endif %}
+                    {% include "partials/wiki_related_sidebar.html" %}
+                    {% include "partials/wiki_referencing_posts_card.html" %}
                 </aside>
             {% endif %}
         </div>

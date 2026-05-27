@@ -4,13 +4,9 @@
     <div class="my-auto flex max-h-[calc(100vh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-[2rem] bg-surface-container-low shadow-[0_24px_64px_rgba(28,27,27,0.16)] sm:max-h-[calc(100vh-4rem)]">
         <div class="flex items-start justify-between gap-4 px-5 pb-4 pt-5 sm:px-6 sm:pb-5 sm:pt-6">
             <div>
-                <div class="text-sm font-semibold text-primary">{{ compose_title_eyebrow|default:"새 포스트" }}</div>
-                <h2 class="mt-2 font-headline text-3xl font-black tracking-tight">{{ compose_heading|default:"질문이나 맥락을 바로 남기기" }}</h2>
-                <p class="mt-3 text-sm leading-7 text-on-surface-variant">
-                    {{ compose_description|default:"제목 없이 본문 그대로 올라갑니다. 태그와 관련 위키만 고르면 나중에 다시 찾기 쉬워집니다." }}
-                </p>
+                <h2 class="font-headline text-2xl font-black tracking-tight text-on-surface">게시글 작성</h2>
                 {% if prefilled_wiki_document %}
-                    <div class="mt-4 inline-flex rounded-full bg-secondary-container px-3 py-1 text-xs font-semibold text-on-secondary-container">
+                    <div class="mt-3 inline-flex rounded-full bg-secondary-container px-3 py-1 text-xs font-semibold text-on-secondary-container">
                         현재 위키에서 시작: {{ prefilled_wiki_document.title }}
                     </div>
                 {% endif %}
@@ -34,9 +30,21 @@
         </div>
         <form method="post"
               action="{% if post_edit_submit_url %}{{ post_edit_submit_url }}{% elif compose_submit_url %}{{ compose_submit_url }}{% endif %}"
+              autocomplete="off"
+              data-community-compose-form
+              data-upload-prepare-url="{% url 'community_image_upload_prepare' %}"
               class="flex-1 space-y-4 overflow-y-auto px-5 pb-5 sm:px-6 sm:pb-6">
             {% csrf_token %}
             {{ post_form.draft_id }}
+            <div class="sticky top-0 z-10 -mx-5 flex items-center justify-between gap-3 border-b border-stone-200/70 bg-surface-container-low px-5 py-3 sm:-mx-6 sm:px-6">
+                <a href="{{ compose_close_url|default:'/community/' }}"
+                   class="rounded-xl bg-surface-container-high px-4 py-3 text-sm font-semibold text-on-surface"
+                   data-community-compose-close>취소</a>
+                <button type="submit"
+                        class="inline-flex items-center justify-center rounded-xl bg-primary-container px-5 py-3 text-sm font-bold text-on-primary-container">
+                    {{ compose_submit_label|default:"게시글 저장" }}
+                </button>
+            </div>
             {% include "partials/form_errors.html" with form=post_form %}
             {% if draft_posts %}
                 <section class="rounded-[1.5rem] bg-surface-container-lowest p-4 ambient-shadow">
@@ -79,6 +87,8 @@
                 </section>
             {% endif %}
             {% include "partials/auth_field.html" with field=post_form.body_markdown %}
+            <div class="hidden rounded-[1.25rem] bg-surface-container-high px-4 py-3 text-sm text-on-surface-variant"
+                 data-community-compose-upload-status></div>
             <section class="rounded-[1.5rem] bg-surface-container-lowest p-4 ambient-shadow">
                 <div class="flex items-center justify-between gap-3">
                     <div>
@@ -193,15 +203,6 @@
                 </div>
             </section>
             {% include "partials/auth_field.html" with field=post_form.status %}
-            <div class="flex items-center justify-between gap-3 pt-2">
-                <a href="{{ compose_close_url|default:'/community/' }}"
-                   class="rounded-xl bg-surface-container-high px-4 py-3 text-sm font-semibold text-on-surface"
-                   data-community-compose-close>취소</a>
-                <button type="submit"
-                        class="inline-flex items-center justify-center rounded-xl bg-primary-container px-5 py-3 text-sm font-bold text-on-primary-container">
-                    {{ compose_submit_label|default:"게시글 저장" }}
-                </button>
-            </div>
         </form>
     </div>
 </div>

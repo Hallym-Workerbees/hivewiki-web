@@ -6,8 +6,6 @@ from apps.accounts.models import HiveUser, UserStatus
 from apps.core.models import (
     Post,
     PostStatus,
-    Tag,
-    TagType,
     WikiDocument,
     WikiDocumentStatus,
     WikiGenerationType,
@@ -75,7 +73,7 @@ class SearchViewTests(TestCase):
         )
         Post.objects.create(
             author_user=author,
-            content_markdown="# 선정 기준 논의\n\n반복 질문을 문서화하는 기준을 정리합니다.",
+            content_markdown="# 선정 기준 논의\n\n선정 기준과 반복 질문 문서화 원칙을 정리합니다.",
             status=PostStatus.PUBLISHED,
         )
         Post.objects.create(
@@ -89,7 +87,7 @@ class SearchViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "통합 검색")
         self.assertContains(response, "커뮤니티 질문을 위키로 전환하는 기준")
-        self.assertContains(response, "반복 질문을 문서화하는 기준을 정리합니다.")
+        self.assertContains(response, "선정 기준과 반복 질문 문서화 원칙을 정리합니다.")
         self.assertNotContains(response, "캡스톤 위키 운영 가이드")
         self.assertNotContains(response, "운영 회고")
         self.assertContains(response, "게시글")
@@ -122,10 +120,28 @@ class SearchViewTests(TestCase):
         self.assertContains(response, "운영 기준 문서 17")
         self.assertNotContains(response, "운영 기준 문서 0")
 
-    def test_integrated_search_matches_post_tags_and_linked_wiki_titles(self):
+    def test_integrated_search_matches_partial_post_body_text(self):
         author = HiveUser.objects.create(
             username="post_author",
             email="post-search@example.com",
+            status=UserStatus.ACTIVE,
+        )
+        Post.objects.create(
+            author_user=author,
+            content_markdown="# test2 공유\n\n이번 주 test2 준비 상황을 정리합니다.",
+            status=PostStatus.PUBLISHED,
+        )
+
+        response = self.client.get("/search/", {"q": "test"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "이번 주 test2 준비 상황을 정리합니다.")
+        self.assertContains(response, "게시글 1건")
+
+    def test_integrated_search_does_not_match_posts_by_linked_wiki_titles(self):
+        author = HiveUser.objects.create(
+            username="wiki_link_author",
+            email="wiki-link-search@example.com",
             status=UserStatus.ACTIVE,
         )
         linked_document = WikiDocument.objects.create(
@@ -144,25 +160,20 @@ class SearchViewTests(TestCase):
         )
         linked_document.current_revision = linked_revision
         linked_document.save(update_fields=["current_revision"])
-        tag = Tag.objects.create(
-            name="발표", slug="presentation", tag_type=TagType.USER
-        )
 
         matching_post = Post.objects.create(
             author_user=author,
             content_markdown="# 데모 일정 공유\n\n이번 주 준비 상황을 정리합니다.",
             status=PostStatus.PUBLISHED,
         )
-        matching_post.tags.add(tag)
         matching_post.wiki_documents.add(linked_document)
 
         response = self.client.get("/search/", {"q": "발표"})
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "이번 주 준비 상황을 정리합니다.")
-        self.assertContains(response, "#발표")
         self.assertContains(response, "캡스톤 발표 준비")
-        self.assertContains(response, "게시글 1건")
+        self.assertNotContains(response, "이번 주 준비 상황을 정리합니다.")
+        self.assertContains(response, "게시글 0건")
 
     def test_wiki_home_filters_documents_for_htmx_requests(self):
         matching_document = WikiDocument.objects.create(

@@ -82,12 +82,6 @@ HiveWiki Web의 구조는 아래 세 가지를 우선합니다.
 - 캐시
 - 로그인 rate limit 상태
 
-중요한 점:
-
-- 캐시는 없어질 수 있습니다.
-- 세션은 초기화될 수 있습니다.
-- 따라서 둘 다 durable business storage로 취급하지 않습니다.
-
 ## Rendering Strategy
 
 ### Full page
@@ -136,8 +130,6 @@ HiveWiki Web의 구조는 아래 세 가지를 우선합니다.
 - 코드 복사 버튼
 - 관리자 새로고침 애니메이션
 - 프로필 이미지 업로드 보조
-
-즉 "JS를 피한다"가 아니라 "JS를 필수 상호작용의 얇은 보조층으로 제한한다"에 가깝습니다.
 
 ## What This Repo Optimizes For
 

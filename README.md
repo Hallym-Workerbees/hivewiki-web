@@ -1,9 +1,6 @@
 # HiveWiki Web
 
-HiveWiki Web은 HiveWiki 프로젝트의 Django 기반 웹 애플리케이션입니다.  
-서버 렌더링을 기본으로 하고, 필요한 상호작용만 `htmx`와 최소한의 JavaScript로 보강합니다.
-
-포트폴리오 관점에서는 "SPA를 만들지 않고도 충분히 빠르고 운영 가능한 웹 앱을 설계한 사례"에 가깝고, 개발자 관점에서는 "Django 템플릿 중심 구조를 팀 단위로 유지보수하기 위한 기준"을 담고 있습니다.
+HiveWiki Web은 HiveWiki 프로젝트의 Django 기반 웹 애플리케이션입니다.
 
 ## Highlights
 
@@ -12,7 +9,7 @@ HiveWiki Web은 HiveWiki 프로젝트의 Django 기반 웹 애플리케이션입
 - Valkey(Redis-compatible)를 세션, 캐시, rate limit 저장소로 사용
 - `GET /livez/`, `GET /readyz/`, `GET /metrics/` 운영 엔드포인트 내장
 - Prometheus / Grafana 연동 예시와 구조화 JSON 요청 로그 제공
-- 로그인 rate limit, OAuth 로그인/연동, S3 프로필 이미지 업로드 지원
+- 로그인 rate limit, OAuth 로그인/연동, S3 이미지 업로드 지원
 - 브라우저 timezone을 세션에 동기화해 사용자 기준 시각을 안정적으로 렌더링
 - 관리자 콘솔, 위키, 커뮤니티, 통합 검색까지 한 저장소에서 제공
 
@@ -93,7 +90,7 @@ uv sync
 uv run pre-commit install --hook-type pre-commit --hook-type commit-msg
 ```
 
-Nix devshell을 쓰는 팀원이라면 아래 방식이 기준입니다.
+Nix devshell을 쓰는 팀원이라면 아래 명령어로 개발환경을 세팅할 수 있습니다.
 
 ```bash
 nix develop
@@ -131,7 +128,7 @@ nix develop --command python manage.py runserver
 
 ## Developer Workflow
 
-일상적인 개발 루틴은 아래 순서를 권장합니다.
+아래 순서대로 로컬 개발 환경을 세팅합니다
 
 1. `.env`를 준비하고 PostgreSQL / Valkey를 띄웁니다.
 2. `python manage.py test`로 변경 영역의 기본 동작을 먼저 확인합니다.
@@ -237,10 +234,6 @@ nix develop --command python manage.py runserver
 - `/metrics/`는 Prometheus scrape endpoint입니다.
 - 이 경로들은 HTTPS redirect와 host validation 예외 처리까지 고려되어 있습니다.
 
-### 5. DB schema 변경은 별도 합의 대상입니다
-
-이 저장소에서는 기능 요청이 있더라도 스키마 변경이 필요하면 먼저 문서와 최종 요약에서 명시하는 편이 안전합니다.
-
 ## Observability
 
 현재 내장 운영 엔드포인트:
@@ -273,15 +266,6 @@ nix develop --command python manage.py runserver
 - [docs/observability/README.md](./docs/observability/README.md): 메트릭, Prometheus, Grafana
 - [docs/observability/healthcheck-ideas.md](./docs/observability/healthcheck-ideas.md): 현재 구현을 확장할 수 있는 운영 아이디어
 
-## Portfolio Framing
-
-이 프로젝트는 아래 관점에서 설명하기 좋습니다.
-
-- Django를 단순 CRUD 프레임워크가 아니라 운영 가능한 웹 애플리케이션 플랫폼으로 사용한 사례
-- 서버 렌더링과 htmx를 조합해 복잡도를 낮추면서도 상호작용성을 확보한 사례
-- request ID, health checks, readiness, metrics, JSON logging까지 포함한 운영 관점의 설계 사례
-- 사용자 timezone, OAuth, rate limit, presigned upload 같은 현실적인 웹 요구사항을 통합한 사례
-
 ## Quality Gates
 
 - `uv-lock`
@@ -289,15 +273,3 @@ nix develop --command python manage.py runserver
 - djLint
 - gitleaks
 - Commitizen
-
-가능하면 최종 변경 전 아래 명령을 실행합니다.
-
-```bash
-pre-commit run --all-files
-```
-
-## Deployment Notes
-
-- 이 저장소는 애플리케이션 코드 저장소입니다.
-- 인프라, GitOps, Prometheus 배포 설정은 별도 저장소에서 관리됩니다.
-- 운영 변경이 세션, 캐시, 환경변수, static asset, startup behavior에 영향을 주면 후속 작업을 배포 저장소에도 반영해야 합니다.

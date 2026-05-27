@@ -54,6 +54,9 @@ ALLOWED_ATTRIBUTES = {
 REVISION_RENDER_CACHE_TIMEOUT = 60 * 60 * 24 * 7
 CODE_NODE_RE = re.compile(r"<code\b[^>]*>.*?</code>", re.DOTALL)
 INLINE_SOURCE_RE = re.compile(r"출처:\s*\[([^\]]+)\]\(([^)\s]+)\)")
+FOOTNOTE_BACKREF_GROUP_RE = re.compile(
+    r'(<a class="footnote-backref"[^>]*>.*?</a>)(?:<a class="footnote-backref"[^>]*>.*?</a>)+'
+)
 
 
 def build_rendered_markdown(
@@ -97,7 +100,8 @@ def build_rendered_markdown(
         skip_tags=["pre", "code"],
         parse_email=False,
     )
-    return _restore_code_entities(linked), annotate_toc_items(toc_items)
+    cleaned_backrefs = _dedupe_footnote_backrefs(linked)
+    return _restore_code_entities(cleaned_backrefs), annotate_toc_items(toc_items)
 
 
 def get_cached_revision_render(*, revision, title: str) -> dict[str, object]:
@@ -151,6 +155,10 @@ def _restore_code_node_entities(match: re.Match[str]) -> str:
     )
 
 
+def _dedupe_footnote_backrefs(rendered_html: str) -> str:
+    return FOOTNOTE_BACKREF_GROUP_RE.sub(r"\1", rendered_html)
+
+
 def _extract_inline_citations(
     markdown_text: str,
 ) -> tuple[str, list[dict[str, str | int]]]:
@@ -170,11 +178,21 @@ def _extract_inline_citations(
             citations.append(
                 {
                     "index": number,
+                    "first_reference_id": f"wiki-citation-ref-{number}-1",
+                    "occurrence_count": 0,
                     "title": key[0],
                     "url": key[1],
                 }
             )
-        return f'<sup class="wiki-citation-marker">[{number}]</sup>'
+        citation = citations[number - 1]
+        citation["occurrence_count"] = int(citation["occurrence_count"]) + 1
+        occurrence = citation["occurrence_count"]
+        reference_id = f"wiki-citation-ref-{number}-{occurrence}"
+        return (
+            f'<sup class="wiki-citation-marker" id="{reference_id}">'
+            f'<a href="#wiki-citation-{number}" class="wiki-citation-link">[{number}]</a>'
+            "</sup>"
+        )
 
     cleaned_markdown = INLINE_SOURCE_RE.sub(replace, markdown_text)
     return cleaned_markdown, citations

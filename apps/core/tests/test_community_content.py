@@ -5,6 +5,7 @@ from django.test import SimpleTestCase
 from apps.core.community_content import (
     build_post_excerpt,
     build_post_markdown,
+    extract_first_image_url,
     extract_post_render_parts,
     extract_post_title_and_body,
     strip_post_leading_title,
@@ -17,6 +18,16 @@ class CommunityContentTests(SimpleTestCase):
         markdown = build_post_markdown("첫 문단입니다.")
 
         self.assertEqual(markdown, "첫 문단입니다.")
+
+    def test_build_post_markdown_converts_html_image_to_markdown(self):
+        markdown = build_post_markdown(
+            '<img alt="대체텍스트" src="https://attachment.hive-wiki.com/community-images/tmp/example.png">'
+        )
+
+        self.assertEqual(
+            markdown,
+            "![대체텍스트](https://attachment.hive-wiki.com/community-images/tmp/example.png)",
+        )
 
     def test_extract_post_title_and_body_reads_leading_h1(self):
         title, body = extract_post_title_and_body(
@@ -80,3 +91,13 @@ class CommunityContentTests(SimpleTestCase):
             self.assertEqual(post.summary, "두 번째 요약")
 
         self.assertEqual(extract_parts.call_count, 2)
+
+    def test_extract_first_image_url_reads_html_image_for_legacy_content(self):
+        image_url = extract_first_image_url(
+            '<img alt="대체텍스트" src="https://attachment.hive-wiki.com/community-images/tmp/example.png">'
+        )
+
+        self.assertEqual(
+            image_url,
+            "https://attachment.hive-wiki.com/community-images/tmp/example.png",
+        )

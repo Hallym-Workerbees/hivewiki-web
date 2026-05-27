@@ -524,6 +524,14 @@ function insertTextareaText(textarea, text) {
   textarea.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
+async function readJsonResponse(response) {
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
 function initializeCommunityComposeImagePaste(root = document) {
   const forms =
     root instanceof Element
@@ -608,9 +616,12 @@ function initializeCommunityComposeImagePaste(root = document) {
         return;
       }
 
-      const prepareData = await prepareResponse.json();
+      const prepareData = await readJsonResponse(prepareResponse);
       if (!prepareResponse.ok) {
-        setStatus(prepareData.error || "업로드를 준비할 수 없습니다.", "error");
+        setStatus(
+          prepareData?.error || "업로드를 준비할 수 없습니다.",
+          "error",
+        );
         return;
       }
 

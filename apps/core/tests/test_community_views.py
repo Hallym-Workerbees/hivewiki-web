@@ -1,6 +1,6 @@
 from unittest.mock import Mock, patch
 
-from botocore.exceptions import NoCredentialsError
+from botocore.exceptions import CredentialRetrievalError, NoCredentialsError
 from django.db import IntegrityError
 from django.test import TestCase, override_settings
 from django.utils import timezone
@@ -187,6 +187,28 @@ class CommunityViewTests(TestCase):
     ):
         mock_s3_client = Mock()
         mock_s3_client.generate_presigned_post.side_effect = NoCredentialsError()
+        mock_boto3_client.return_value = mock_s3_client
+
+        response = self.client.post(
+            "/community/image-upload/prepare/",
+            {"filename": "pasted-image.png", "content_type": "image/png"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()["error"],
+            "S3 업로드 자격 증명을 찾지 못했습니다. Pod Identity 또는 액세스 키 설정을 확인해 주세요.",
+        )
+
+    @patch("apps.accounts.services.boto3.client")
+    def test_community_image_upload_prepare_returns_400_when_container_credentials_timeout(
+        self, mock_boto3_client
+    ):
+        mock_s3_client = Mock()
+        mock_s3_client.generate_presigned_post.side_effect = CredentialRetrievalError(
+            provider="container-role",
+            error_msg="metadata timeout",
+        )
         mock_boto3_client.return_value = mock_s3_client
 
         response = self.client.post(

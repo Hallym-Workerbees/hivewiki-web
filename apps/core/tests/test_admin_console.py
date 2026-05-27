@@ -19,6 +19,7 @@ from apps.core.models import (
     Post,
     PostStatus,
     Source,
+    SourceChunk,
     SourceDocument,
     SourceDocumentFetchStatus,
     SourceDocumentWikiStatus,
@@ -27,6 +28,7 @@ from apps.core.models import (
     WikiDocument,
     WikiDocumentStatus,
     WikiRevision,
+    WikiRevisionSource,
 )
 
 
@@ -653,6 +655,64 @@ class AdminConsoleTests(TestCase):
         self.assertFalse(Source.objects.filter(pk=source.pk).exists())
         self.assertFalse(SourceDocument.objects.filter(pk=document.pk).exists())
         self.assertEqual(IngestionJob.objects.count(), 0)
+
+    def test_admin_can_delete_source_used_by_wiki_revision_sources(self):
+        admin_user = HiveUser.objects.create(
+            username="admin_user",
+            email="admin@example.com",
+            password_hash=make_password("admin-pass-123!"),
+            role=UserRole.ADMIN,
+            status=UserStatus.ACTIVE,
+        )
+        source = Source.objects.create(
+            name="참조 중인 소스",
+            target_url="https://example.com/referenced-source",
+            enabled=True,
+            poll_interval_minutes=30,
+            next_poll_at=timezone.now(),
+            updated_at=timezone.now(),
+        )
+        document = SourceDocument.objects.create(
+            source=source,
+            canonical_url="https://example.com/referenced-source/doc-1",
+            title="참조 중인 문서",
+        )
+        source_chunk = SourceChunk.objects.create(
+            source_document=document,
+            chunk_index=0,
+            content_text="근거 문장",
+        )
+        wiki_document = WikiDocument.objects.create(
+            title="운영 가이드",
+            slug="operations-guide",
+            summary="삭제 테스트",
+            status=WikiDocumentStatus.PUBLISHED,
+        )
+        revision = WikiRevision.objects.create(
+            wiki_document=wiki_document,
+            revision_number=1,
+            content_markdown="본문",
+        )
+        wiki_document.current_revision = revision
+        wiki_document.save(update_fields=["current_revision"])
+        revision_source = WikiRevisionSource.objects.create(
+            wiki_revision=revision,
+            source_chunk=source_chunk,
+            evidence_text="근거 문장",
+        )
+        self._login(admin_user)
+
+        response = self.client.post(
+            f"/dashboard/admin/sources/{source.id}/edit/",
+            {"action": "delete"},
+            HTTP_HX_REQUEST="true",
+        )
+
+        revision_source.refresh_from_db()
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response.headers.get("HX-Refresh"), "true")
+        self.assertFalse(Source.objects.filter(pk=source.pk).exists())
+        self.assertIsNone(revision_source.source_chunk)
 
     def test_admin_source_delete_success_message_is_rendered_on_ingestion_page(self):
         admin_user = HiveUser.objects.create(

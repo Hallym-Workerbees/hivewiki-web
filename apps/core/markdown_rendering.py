@@ -24,6 +24,7 @@ ALLOWED_TAGS = [
     "h5",
     "h6",
     "hr",
+    "img",
     "input",
     "li",
     "ol",
@@ -47,6 +48,7 @@ ALLOWED_ATTRIBUTES = {
     "span": ["class"],
     "code": ["class"],
     "pre": ["class"],
+    "img": ["alt", "src", "title"],
     "input": ["checked", "disabled", "type"],
 }
 REVISION_RENDER_CACHE_TIMEOUT = 60 * 60 * 24 * 7

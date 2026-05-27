@@ -95,21 +95,6 @@ uv run python manage.py runserver
 pre-commit run --all-files
 ```
 
-## Request Modes You Must Verify
-
-기능을 추가하거나 수정할 때 아래 두 가지를 구분해 확인해야 합니다.
-
-### Full-page request
-
-- 전체 페이지 템플릿이 렌더링되는지
-- redirect와 flash/message 흐름이 자연스러운지
-
-### htmx request
-
-- partial HTML만 반환하는지
-- `hx-target`, `hx-swap`과 결과 마크업이 맞는지
-- validation error가 해당 partial에 다시 표시되는지
-
 ## Timezone Handling
 
 - 브라우저 timezone은 `POST /auth/timezone/`를 통해 세션에 저장됩니다.

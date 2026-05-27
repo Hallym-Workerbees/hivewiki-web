@@ -18,6 +18,8 @@ import certifi
 from botocore.exceptions import (
     BotoCoreError,
     ClientError,
+    CredentialRetrievalError,
+    MetadataRetrievalError,
     NoCredentialsError,
     PartialCredentialsError,
 )
@@ -169,7 +171,13 @@ def build_public_image_upload_payload(
             ],
             ExpiresIn=600,
         )
-    except (NoCredentialsError, PartialCredentialsError, AttributeError) as exc:
+    except (
+        NoCredentialsError,
+        PartialCredentialsError,
+        CredentialRetrievalError,
+        MetadataRetrievalError,
+        AttributeError,
+    ) as exc:
         raise ProfileImageUploadError(
             "S3 업로드 자격 증명을 찾지 못했습니다. Pod Identity 또는 액세스 키 설정을 확인해 주세요."
         ) from exc

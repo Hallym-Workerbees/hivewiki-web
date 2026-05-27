@@ -86,7 +86,8 @@
                             </div>
                             <ol class="mt-5 space-y-3">
                                 {% for citation in citations %}
-                                    <li class="rounded-[1.25rem] bg-white/80 px-5 py-4 shadow-sm ring-1 ring-outline-variant/50">
+                                    <li id="wiki-citation-{{ citation.index }}"
+                                        class="rounded-[1.25rem] bg-white/80 px-5 py-4 shadow-sm ring-1 ring-outline-variant/50">
                                         <div class="flex items-start gap-4">
                                             <span class="wiki-citation-pill">{{ citation.index }}</span>
                                             <div class="min-w-0 flex-1">
@@ -94,6 +95,14 @@
                                                    class="font-semibold text-on-surface underline decoration-primary/30 underline-offset-2 transition hover:text-primary"
                                                    rel="noopener noreferrer">{{ citation.title }}</a>
                                                 <div class="mt-2 break-all text-sm text-on-surface-variant">{{ citation.url }}</div>
+                                                <div class="mt-3 flex flex-wrap items-center gap-3 text-sm text-on-surface-variant">
+                                                    <a href="#{{ citation.first_reference_id }}"
+                                                       class="inline-flex items-center gap-1 font-semibold text-primary transition hover:text-primary/80"
+                                                       aria-label="본문 인용 위치로 돌아가기">
+                                                        <span aria-hidden="true">↩</span>
+                                                        <span>본문으로</span>
+                                                    </a>
+                                                </div>
                                             </div>
                                         </div>
                                     </li>

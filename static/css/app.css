@@ -339,6 +339,15 @@ h6 {
   vertical-align: super;
 }
 
+.reading-prose .wiki-citation-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.reading-prose .wiki-citation-link:hover {
+  text-decoration: underline;
+}
+
 .wiki-citation-pill {
   display: inline-flex;
   min-width: 2rem;

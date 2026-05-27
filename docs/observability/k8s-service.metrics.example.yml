@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: hivewiki-web-metrics
+  namespace: hivewiki
+  labels:
+    app: hivewiki-web
+spec:
+  selector:
+    app: hivewiki-web
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000

@@ -1,0 +1,26 @@
+<div class="mt-4 rounded-[1.25rem] bg-surface-container-high p-4">
+    <form method="post"
+          action="{% url 'community_comment_create' post.id %}"
+          class="space-y-3">
+        {% csrf_token %}
+        <input type="hidden" name="parent_comment_id" value="{{ comment.id }}">
+        {% for error in comment_form.content.errors %}<p class="text-sm text-red-700">{{ error }}</p>{% endfor %}
+        <label class="block">
+            <span class="mb-2 block text-sm font-semibold">답글</span>
+            <textarea name="content"
+                      rows="3"
+                      class="w-full rounded-2xl border-stone-200 bg-white px-4 py-3 leading-7"
+                      placeholder="이 댓글에 이어서 답글을 남겨 보세요.">{{ comment_form.content.value|default_if_none:'' }}</textarea>
+        </label>
+        <div class="flex items-center gap-3">
+            <button type="submit"
+                    class="inline-flex items-center justify-center rounded-xl bg-stone-950 px-4 py-2 text-sm font-bold text-stone-50">
+                답글 등록
+            </button>
+            <a href="{{ post.get_absolute_url }}#comment-{{ comment.id }}"
+               class="text-sm font-semibold text-on-surface-variant"
+               data-comment-reply-close
+               data-comment-reply-target="#comment-reply-{{ comment.id }}">취소</a>
+        </div>
+    </form>
+</div>

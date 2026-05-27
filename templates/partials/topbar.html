@@ -1,0 +1,46 @@
+<header class="glass-nav fixed inset-x-0 top-0 z-40 border-b border-white/60 lg:left-72">
+    <div class="flex items-center justify-between px-6 py-4 lg:px-10">
+        <div class="flex items-center gap-3">
+            <button type="button"
+                    class="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-surface-container-low text-on-surface lg:hidden"
+                    data-app-drawer-open="left"
+                    aria-label="메뉴 열기">
+                <svg class="h-5 w-5"
+                     viewBox="0 0 24 24"
+                     fill="none"
+                     stroke="currentColor"
+                     stroke-width="2"
+                     stroke-linecap="round"
+                     stroke-linejoin="round"
+                     aria-hidden="true">
+                    <path d="M3 6h18" />
+                    <path d="M3 12h18" />
+                    <path d="M3 18h18" />
+                </svg>
+            </button>
+            <div class="text-xs font-semibold uppercase tracking-[0.22em] text-stone-400">HiveWiki</div>
+        </div>
+        <div class="flex items-center gap-3 md:gap-4">
+            {% if mobile_right_drawer_label %}
+                <button type="button"
+                        class="inline-flex h-11 items-center justify-center rounded-2xl bg-surface-container-low px-4 text-sm font-semibold text-on-surface lg:hidden"
+                        data-app-drawer-open="right">{{ mobile_right_drawer_label }}</button>
+            {% endif %}
+            {% if not hide_topbar_search %}
+                <div class="hidden md:block">
+                    {% include "partials/search_bar.html" with placeholder="위키 문서를 검색하세요" action=search_action|default:"/search/" %}
+                </div>
+            {% endif %}
+            {% if current_user %}
+                {% include "partials/notification_topbar_link.html" %}
+                <a href="{% url 'mypage' %}"
+                   class="rounded-2xl bg-surface-container-low px-4 py-3 text-sm font-semibold text-on-surface-variant">{{ current_user.username }}</a>
+            {% else %}
+                <a href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}"
+                   class="rounded-2xl bg-surface-container-low px-4 py-3 text-sm font-semibold text-on-surface-variant">로그인</a>
+                <a href="{% url 'signup' %}"
+                   class="hidden rounded-2xl bg-primary-container px-4 py-3 text-sm font-bold text-on-primary-container sm:inline-flex">회원가입</a>
+            {% endif %}
+        </div>
+    </div>
+</header>

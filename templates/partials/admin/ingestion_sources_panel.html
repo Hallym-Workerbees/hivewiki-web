@@ -1,0 +1,166 @@
+<div id="admin-ingestion-sources"
+     class="space-y-6 rounded-[2rem] bg-surface-container-low p-6 shadow-ambient lg:p-8">
+    {% include "partials/section_header.html" with eyebrow="Verbose Status" title="소스별 수집 현황" description="소스, 문서, 잡 상태를 한 번에 보고 문제가 생긴 구간을 빠르게 좁힙니다." refresh_url=request.path refresh_query=sources_refresh_query refresh_section="sources" refresh_target="#admin-ingestion-sources" %}
+    <form method="get"
+          action="{{ request.path }}"
+          hx-get="{{ request.path }}"
+          hx-target="#admin-ingestion-sources"
+          hx-swap="outerHTML"
+          hx-push-url="true"
+          class="space-y-3 rounded-[1.5rem] bg-white p-4">
+        <input type="hidden" name="section" value="sources">
+        <input type="hidden" name="document_query" value="{{ document_query }}">
+        <input type="hidden"
+               name="document_fetch_status"
+               value="{{ selected_document_fetch_status }}">
+        <input type="hidden"
+               name="document_wiki_status"
+               value="{{ selected_document_wiki_status }}">
+        <input type="hidden"
+               name="document_page"
+               value="{{ recent_documents.number }}">
+        <input type="hidden" name="job_query" value="{{ job_query }}">
+        <input type="hidden" name="job_status" value="{{ selected_job_status }}">
+        <input type="hidden" name="job_page" value="{{ recent_jobs.number }}">
+        <input type="search"
+               name="source_query"
+               value="{{ source_query }}"
+               placeholder="소스 이름, URL 검색"
+               class="w-full min-w-0 rounded-2xl border-0 bg-surface-container-low px-4 py-3 text-sm text-on-surface placeholder:text-on-surface-variant focus:ring-2 focus:ring-primary-container">
+        <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+            <select name="source_health"
+                    class="w-full min-w-0 rounded-2xl border-0 bg-surface-container-low px-4 py-3 text-sm text-on-surface focus:ring-2 focus:ring-primary-container">
+                {% for value, label in source_health_choices %}
+                    <option value="{{ value }}"
+                            {% if selected_source_health == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <select name="source_enabled"
+                    class="w-full min-w-0 rounded-2xl border-0 bg-surface-container-low px-4 py-3 text-sm text-on-surface focus:ring-2 focus:ring-primary-container">
+                {% for value, label in source_enabled_choices %}
+                    <option value="{{ value }}"
+                            {% if selected_source_enabled == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <button type="submit"
+                    class="whitespace-nowrap rounded-2xl bg-primary-container px-4 py-3 text-sm font-semibold text-on-primary-container">
+                적용
+            </button>
+        </div>
+    </form>
+    <div class="space-y-3">
+        {% for source in sources %}
+            <div class="rounded-[1.5rem] bg-white px-5 py-5 transition hover:-translate-y-0.5 hover:shadow-ambient {{ source.health_panel_class }}">
+                <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                    <div class="min-w-0">
+                        <div class="font-semibold text-on-surface">{{ source.name }}</div>
+                        <div class="mt-1 break-all text-xs text-stone-500">{{ source.target_url }}</div>
+                    </div>
+                    <div class="flex shrink-0 flex-wrap items-center gap-3 xl:justify-end">
+                        <div class="rounded-full px-3 py-1 text-xs font-semibold {{ source.health_badge_class }}">
+                            {{ source.health_label }}
+                        </div>
+                        <div class="rounded-full px-3 py-1 text-xs font-semibold {% if source.enabled %}bg-primary-container text-on-primary-container{% else %}bg-stone-200 text-stone-600{% endif %}">
+                            {% if source.enabled %}
+                                활성
+                            {% else %}
+                                비활성
+                            {% endif %}
+                        </div>
+                        <button type="button"
+                                hx-get="{% url 'admin_source_edit_modal' source.id %}"
+                                hx-target="#admin-modal-root"
+                                hx-swap="innerHTML"
+                                class="rounded-2xl bg-surface-container-low px-4 py-2 text-sm font-semibold text-primary">
+                            수정
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-4 grid gap-3 text-sm text-on-surface-variant sm:grid-cols-3 xl:grid-cols-5">
+                    <div>
+                        <div class="text-xs uppercase tracking-[0.18em] text-stone-400">주기</div>
+                        <div class="mt-1 font-semibold text-on-surface">{{ source.poll_interval_minutes }}분</div>
+                    </div>
+                    <div>
+                        <div class="text-xs uppercase tracking-[0.18em] text-stone-400">다음 수집</div>
+                        <div class="mt-1 font-semibold text-on-surface timezone-sensitive"
+                             data-local-datetime="{{ source.next_poll_at|date:'c' }}"
+                             data-local-format="datetime">{{ source.next_poll_at|date:"Y-m-d H:i" }}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs uppercase tracking-[0.18em] text-stone-400">문서</div>
+                        <div class="mt-1 font-semibold text-on-surface">{{ source.document_count }}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs uppercase tracking-[0.18em] text-stone-400">대기 문서</div>
+                        <div class="mt-1 font-semibold {% if source.pending_document_count > 0 %}text-primary{% else %}text-on-surface{% endif %}">
+                            {{ source.pending_document_count }}
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-xs uppercase tracking-[0.18em] text-stone-400">실패 문서/잡</div>
+                        <div class="mt-1 font-semibold {% if source.failed_document_count > 0 or source.failed_job_count > 0 %}text-error{% else %}text-on-surface{% endif %}">
+                            {{ source.failed_document_count }} / {{ source.failed_job_count }}
+                        </div>
+                    </div>
+                </div>
+                <div class="mt-4 grid gap-3 text-sm text-on-surface-variant sm:grid-cols-3">
+                    <div>
+                        <div class="text-xs uppercase tracking-[0.18em] text-stone-400">연속 실패</div>
+                        <div class="mt-1 font-semibold {% if source.consecutive_failures > 0 %}text-error{% else %}text-on-surface{% endif %}">
+                            {{ source.consecutive_failures }}회
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-xs uppercase tracking-[0.18em] text-stone-400">대기 잡</div>
+                        <div class="mt-1 font-semibold text-on-surface">{{ source.queued_job_count }}</div>
+                    </div>
+                    <div>
+                        <div class="text-xs uppercase tracking-[0.18em] text-stone-400">최근 성공</div>
+                        <div class="mt-1 font-semibold text-on-surface">
+                            {% if source.last_success_at %}
+                                <span class="timezone-sensitive"
+                                      data-local-datetime="{{ source.last_success_at|date:'c' }}"
+                                      data-local-format="datetime">{{ source.last_success_at|date:"Y-m-d H:i" }}</span>
+                            {% else %}
+                                없음
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% if source.last_error_message %}
+                    <div class="mt-4 rounded-2xl bg-error-container px-4 py-3 text-sm text-on-error-container">
+                        {{ source.last_error_message }}
+                    </div>
+                {% endif %}
+            </div>
+        {% empty %}
+            <div class="rounded-[1.5rem] bg-white px-5 py-8 text-sm text-on-surface-variant">등록된 수집 소스가 없습니다.</div>
+        {% endfor %}
+    </div>
+    {% if sources.paginator.num_pages > 1 %}
+        <div class="flex items-center justify-between gap-4 border-t border-outline-variant/70 pt-5 text-sm">
+            {% if sources.has_previous %}
+                <a href="{{ source_prev_url }}"
+                   hx-get="{{ source_prev_url }}"
+                   hx-target="#admin-ingestion-sources"
+                   hx-swap="outerHTML"
+                   hx-push-url="true"
+                   class="rounded-2xl bg-surface-container-high px-4 py-2 font-semibold text-primary">이전</a>
+            {% else %}
+                <span class="rounded-2xl bg-surface-container-high px-4 py-2 text-on-surface-variant">이전</span>
+            {% endif %}
+            <span class="text-on-surface-variant">{{ sources.number }} / {{ sources.paginator.num_pages }}</span>
+            {% if sources.has_next %}
+                <a href="{{ source_next_url }}"
+                   hx-get="{{ source_next_url }}"
+                   hx-target="#admin-ingestion-sources"
+                   hx-swap="outerHTML"
+                   hx-push-url="true"
+                   class="rounded-2xl bg-surface-container-high px-4 py-2 font-semibold text-primary">다음</a>
+            {% else %}
+                <span class="rounded-2xl bg-surface-container-high px-4 py-2 text-on-surface-variant">다음</span>
+            {% endif %}
+        </div>
+    {% endif %}
+</div>

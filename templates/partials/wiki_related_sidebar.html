@@ -1,0 +1,18 @@
+{% if related_wiki_items %}
+    <section class="hidden rounded-[1.5rem] bg-surface-container-low p-5 xl:block">
+        <div class="flex items-center justify-between gap-3">
+            <div>
+                <h2 class="font-headline text-xl font-extrabold tracking-tight text-on-surface">연관 위키</h2>
+                <p class="mt-1 text-sm text-on-surface-variant">함께 참고할 만한 문서를 모았습니다.</p>
+            </div>
+            <div class="inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-full bg-surface-container-high px-3 py-1 text-xs font-semibold text-on-surface-variant">
+                {{ related_wiki_items|length }}건
+            </div>
+        </div>
+        <div class="mt-4 space-y-4">
+            {% for item in related_wiki_items %}
+                {% include "partials/wiki_card.html" %}
+            {% endfor %}
+        </div>
+    </section>
+{% endif %}

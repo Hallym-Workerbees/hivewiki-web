@@ -1,0 +1,37 @@
+{% if current_user %}
+    <form method="post"
+          action="{% url 'wiki_bookmark_toggle' document.slug %}"
+          {% if htmx_enabled %}hx-post="{% url 'wiki_bookmark_toggle' document.slug %}" hx-target="this" hx-swap="outerHTML"{% endif %}>
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <button type="submit"
+                class="inline-flex min-w-[9rem] items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold transition hover:-translate-y-0.5 {% if document.is_bookmarked_by_current_user %}bg-amber-100 text-amber-700{% else %}bg-surface-container-high text-on-surface hover:bg-surface-container-highest{% endif %}">
+            <svg class="h-4 w-4"
+                 viewBox="0 0 24 24"
+                 fill="{% if document.is_bookmarked_by_current_user %}currentColor{% else %}none{% endif %}"
+                 stroke="currentColor"
+                 stroke-width="1.9"
+                 stroke-linecap="round"
+                 stroke-linejoin="round"
+                 aria-hidden="true">
+                <path d="M6 4.5h12a1.5 1.5 0 0 1 1.5 1.5v13l-7.5-4-7.5 4V6A1.5 1.5 0 0 1 6 4.5Z" />
+            </svg>
+            <span>북마크</span>
+        </button>
+    </form>
+{% else %}
+    <a href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}"
+       class="inline-flex min-w-[9rem] items-center justify-center gap-2 rounded-full bg-surface-container-high px-4 py-2.5 text-sm font-semibold text-on-surface transition hover:-translate-y-0.5 hover:bg-surface-container-highest">
+        <svg class="h-4 w-4"
+             viewBox="0 0 24 24"
+             fill="none"
+             stroke="currentColor"
+             stroke-width="1.9"
+             stroke-linecap="round"
+             stroke-linejoin="round"
+             aria-hidden="true">
+            <path d="M6 4.5h12a1.5 1.5 0 0 1 1.5 1.5v13l-7.5-4-7.5 4V6A1.5 1.5 0 0 1 6 4.5Z" />
+        </svg>
+        <span>북마크</span>
+    </a>
+{% endif %}

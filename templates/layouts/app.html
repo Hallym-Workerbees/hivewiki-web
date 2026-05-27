@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block body %}
+    <div class="min-h-screen bg-surface">
+        {% include "partials/sidebar.html" %}
+        <div class="fixed inset-0 z-50 hidden lg:hidden"
+             data-app-drawer-root="left"
+             aria-hidden="true">
+            <button type="button"
+                    class="absolute inset-0 bg-stone-950/35 opacity-0 transition-opacity duration-200"
+                    data-app-drawer-close
+                    data-app-drawer-close-side="left"
+                    aria-label="메뉴 닫기"></button>
+            <div class="absolute inset-y-0 left-0 w-[20rem] max-w-[86vw] -translate-x-full transition-transform duration-200"
+                 data-app-drawer-panel="left">{% include "partials/sidebar.html" with sidebar_mode="mobile" %}</div>
+        </div>
+        {% if mobile_right_drawer_label %}
+            <div class="fixed inset-0 z-50 hidden lg:hidden"
+                 data-app-drawer-root="right"
+                 aria-hidden="true">
+                <button type="button"
+                        class="absolute inset-0 bg-stone-950/35 opacity-0 transition-opacity duration-200"
+                        data-app-drawer-close
+                        data-app-drawer-close-side="right"
+                        aria-label="{{ mobile_right_drawer_label }} 닫기"></button>
+                <div class="absolute inset-y-0 right-0 flex w-[20rem] max-w-[86vw] translate-x-full flex-col bg-surface-container-low shadow-[-24px_0_64px_rgba(28,27,27,0.18)] transition-transform duration-200"
+                     data-app-drawer-panel="right">
+                    <div class="flex items-center justify-between border-b border-stone-200/70 px-5 py-4">
+                        <h2 class="font-headline text-xl font-extrabold tracking-tight text-on-surface">{{ mobile_right_drawer_label }}</h2>
+                        <button type="button"
+                                class="rounded-full bg-surface-container-high p-3 text-on-surface"
+                                data-app-drawer-close
+                                data-app-drawer-close-side="right">
+                            <span class="sr-only">{{ mobile_right_drawer_label }} 닫기</span>
+                            <svg class="h-5 w-5"
+                                 viewBox="0 0 24 24"
+                                 fill="none"
+                                 stroke="currentColor"
+                                 stroke-width="2"
+                                 stroke-linecap="round"
+                                 stroke-linejoin="round"
+                                 aria-hidden="true">
+                                <path d="m18 6-12 12" />
+                                <path d="m6 6 12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="flex-1 overflow-y-auto px-4 pb-6 pt-4">
+                        {% block mobile_right_drawer_content %}
+                        {% endblock mobile_right_drawer_content %}
+                    </div>
+                </div>
+            </div>
+        {% endif %}
+        <div class="flex min-h-screen flex-col lg:ml-72">
+            {% include "partials/topbar.html" %}
+            <main class="flex-1 px-6 pb-12 pt-28 lg:px-10">
+                {% block app_content %}
+                {% endblock app_content %}
+            </main>
+            {% include "partials/footer.html" %}
+        </div>
+    </div>
+{% endblock body %}

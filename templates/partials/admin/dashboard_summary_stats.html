@@ -1,0 +1,7 @@
+<section id="admin-dashboard-summary"
+         class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    {% include "partials/stat_tile.html" with label="유저" value=user_count description="현재 등록된 전체 사용자 수" %}
+    {% include "partials/stat_tile.html" with label="태그" value=tag_count description="커뮤니티 분류에 사용되는 전체 태그 수" %}
+    {% include "partials/stat_tile.html" with label="소스" value=source_count description="크롤러가 참조하는 수집 소스 수" %}
+    {% include "partials/stat_tile.html" with label="문서" value=document_count description="수집된 소스 문서 수" %}
+</section>

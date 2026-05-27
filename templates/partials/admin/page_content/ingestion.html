@@ -1,0 +1,10 @@
+{% include "partials/admin/ingestion_summary_stats.html" %}
+<section class="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+    {% include "partials/admin/ingestion_create_panel.html" %}
+    {% include "partials/admin/ingestion_sources_panel.html" %}
+</section>
+<section class="grid gap-6 xl:grid-cols-2">
+    {% include "partials/admin/ingestion_documents_panel.html" %}
+    {% include "partials/admin/ingestion_jobs_panel.html" %}
+</section>
+<div id="admin-modal-root"></div>

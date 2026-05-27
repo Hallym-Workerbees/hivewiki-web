@@ -1,0 +1,17 @@
+<footer class="border-t border-stone-200/70 bg-surface-container-low">
+    <div class="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-6 text-sm text-on-surface-variant lg:flex-row lg:items-center lg:justify-between lg:px-10 lg:py-8">
+        <div class="flex items-center gap-3">
+            <span class="flex h-8 w-8 items-center justify-center rounded-full bg-stone-950 text-xs font-black text-white">W</span>
+            <span class="font-semibold text-on-surface">Workerbees</span>
+            <span class="text-stone-400">·</span>
+            <span>HiveWiki</span>
+        </div>
+        <div class="flex flex-wrap items-center gap-4 text-sm">
+            <a href="{% url 'wiki_home' %}" class="transition hover:text-on-surface">위키</a>
+            <a href="{% url 'community_list' %}"
+               class="transition hover:text-on-surface">커뮤니티</a>
+            <a href="{% url 'integrated_search' %}"
+               class="transition hover:text-on-surface">검색</a>
+        </div>
+    </div>
+</footer>

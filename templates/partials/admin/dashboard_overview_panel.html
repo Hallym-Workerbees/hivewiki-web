@@ -1,0 +1,42 @@
+<article id="admin-dashboard-overview"
+         class="rounded-[2rem] bg-surface-container-low p-6 shadow-ambient lg:p-8">
+    {% include "partials/section_header.html" with eyebrow="Overview" title="즉시 확인할 항목" description="운영자가 자주 확인하는 영역으로 바로 이동합니다." %}
+    <div class="mt-6 grid gap-4">
+        <a href="{% url 'admin_user_management' %}"
+           hx-get="{% url 'admin_user_management' %}"
+           hx-target="#admin-page-shell"
+           hx-swap="outerHTML"
+           hx-push-url="true"
+           class="rounded-[1.5rem] bg-white px-5 py-5 transition hover:-translate-y-0.5 hover:shadow-ambient">
+            <div class="font-semibold text-on-surface">유저 관리</div>
+            <div class="mt-2 text-sm text-on-surface-variant">권한, 상태, 최근 가입 사용자 목록을 확인합니다.</div>
+        </a>
+        <a href="{% url 'admin_tag_management' %}"
+           hx-get="{% url 'admin_tag_management' %}"
+           hx-target="#admin-page-shell"
+           hx-swap="outerHTML"
+           hx-push-url="true"
+           class="rounded-[1.5rem] bg-white px-5 py-5 transition hover:-translate-y-0.5 hover:shadow-ambient">
+            <div class="font-semibold text-on-surface">태그 관리</div>
+            <div class="mt-2 text-sm text-on-surface-variant">시스템 태그 제안과 사용자 태그 분류를 관리합니다.</div>
+        </a>
+        <a href="{% url 'admin_ingestion_management' %}"
+           hx-get="{% url 'admin_ingestion_management' %}"
+           hx-target="#admin-page-shell"
+           hx-swap="outerHTML"
+           hx-push-url="true"
+           class="rounded-[1.5rem] bg-white px-5 py-5 transition hover:-translate-y-0.5 hover:shadow-ambient">
+            <div class="font-semibold text-on-surface">데이터 수집</div>
+            <div class="mt-2 text-sm text-on-surface-variant">소스별 실패 현황, 수집 문서, ingestion job 상태를 자세히 봅니다.</div>
+        </a>
+        <a href="{% url 'admin_content_management' %}"
+           hx-get="{% url 'admin_content_management' %}"
+           hx-target="#admin-page-shell"
+           hx-swap="outerHTML"
+           hx-push-url="true"
+           class="rounded-[1.5rem] bg-white px-5 py-5 transition hover:-translate-y-0.5 hover:shadow-ambient">
+            <div class="font-semibold text-on-surface">콘텐츠 관리</div>
+            <div class="mt-2 text-sm text-on-surface-variant">커뮤니티 글 삭제/복구와 위키 게시 상태 전환을 운영자가 직접 처리합니다.</div>
+        </a>
+    </div>
+</article>

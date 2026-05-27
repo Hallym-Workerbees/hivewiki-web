@@ -1,0 +1,10 @@
+<article id="admin-dashboard-signals"
+         class="rounded-[2rem] bg-surface-container-low p-6 shadow-ambient lg:p-8">
+    {% include "partials/section_header.html" with eyebrow="Signals" title="운영 신호" description="문제가 발생하기 쉬운 영역만 빠르게 요약합니다." refresh_url=request.path refresh_section="signals" refresh_target="#admin-dashboard-signals" %}
+    <div class="mt-6 grid gap-4 sm:grid-cols-2">
+        {% include "partials/stat_tile.html" with label="활성 소스" value=enabled_source_count description="즉시 수집 가능한 데이터 소스 수" %}
+        {% include "partials/stat_tile.html" with label="실패 소스" value=failing_source_count description="최근 에러가 남아 있는 소스 수" %}
+        {% include "partials/stat_tile.html" with label="잡" value=job_count description="전체 ingestion job 수" %}
+        {% include "partials/stat_tile.html" with label="콘텐츠" value=post_count description="운영 대상 커뮤니티 게시글 수" %}
+    </div>
+</article>

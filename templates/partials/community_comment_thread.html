@@ -1,0 +1,92 @@
+{% load markdown_extras %}
+<article id="comment-{{ comment.id }}"
+         class="rounded-[1.5rem] bg-surface-container-lowest p-5">
+    <div class="flex flex-wrap items-center gap-3 text-sm text-on-surface-variant">
+        {% if comment.author_user and comment.author_user.profile_image %}
+            <img src="{{ comment.author_user.profile_image }}"
+                 alt="{{ comment.author_user.username|default:'익명 사용자' }} 프로필 이미지"
+                 width="36"
+                 height="36"
+                 class="h-9 w-9 rounded-full object-cover">
+        {% else %}
+            <span class="flex h-9 w-9 items-center justify-center rounded-full bg-primary-container text-xs font-black text-on-primary-container">
+                {{ comment.author_user.username|default:"익명 사용자"|first|upper }}
+            </span>
+        {% endif %}
+        <span class="font-semibold text-on-surface">{{ comment.author_user.username|default:"익명 사용자" }}</span>
+        <time class="timezone-sensitive"
+              data-local-datetime="{{ comment.created_at|date:'c' }}"
+              data-local-format="datetime">{{ comment.created_at|date:"Y.m.d H:i" }}</time>
+    </div>
+    {% if editing_comment_id == comment.id|stringformat:"s" %}
+        <form method="post"
+              action="{% url 'community_comment_edit' post.id comment.id %}"
+              class="mt-4 space-y-3">
+            {% csrf_token %}
+            {% include "partials/form_errors.html" with form=comment_edit_form %}
+            <label class="block">
+                <span class="mb-2 block text-sm font-semibold">{{ comment_edit_form.content.label }}</span>
+                <textarea name="content"
+                          rows="4"
+                          class="w-full rounded-2xl border-stone-200 bg-white px-4 py-3 leading-7"
+                          placeholder="댓글 내용을 수정해 보세요.">{{ comment_edit_form.content.value|default_if_none:'' }}</textarea>
+            </label>
+            <div class="flex items-center gap-3">
+                <button type="submit"
+                        class="inline-flex items-center justify-center rounded-xl bg-stone-950 px-4 py-2 text-sm font-bold text-stone-50">
+                    수정 저장
+                </button>
+                <a href="{{ post.get_absolute_url }}#comment-{{ comment.id }}"
+                   class="text-sm font-semibold text-on-surface-variant">취소</a>
+            </div>
+        </form>
+    {% else %}
+        <div class="reading-prose prose prose-stone mt-4 max-w-none text-sm leading-7 text-on-surface">
+            {{ comment.content|render_markdown }}
+        </div>
+    {% endif %}
+    <div class="mt-4 flex items-center gap-3">
+        {% include "partials/community_comment_like_button.html" with htmx_enabled=True %}
+        {% if current_user and editing_comment_id != comment.id|stringformat:"s" %}
+            <button type="button"
+                    class="text-sm font-semibold text-primary"
+                    data-comment-reply-open
+                    data-comment-reply-url="{% url 'community_comment_reply_form' post.id comment.id %}"
+                    data-comment-reply-target="#comment-reply-{{ comment.id }}">답글</button>
+        {% endif %}
+        {% if current_user and comment.author_user_id == current_user.id %}
+            <a href="{% url 'community_comment_edit' post.id comment.id %}"
+               class="text-sm font-semibold text-on-surface-variant">댓글 수정</a>
+        {% endif %}
+    </div>
+    {% if current_user and reply_target_id == comment.id|stringformat:"s" %}
+        <div id="comment-reply-{{ comment.id }}" data-comment-reply-slot>
+            {% include "partials/community_comment_reply_form.html" %}
+        </div>
+    {% elif current_user %}
+        <div id="comment-reply-{{ comment.id }}" data-comment-reply-slot></div>
+    {% elif not current_user %}
+        <div class="mt-4 text-sm font-semibold text-on-surface-variant">
+            <a href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}"
+               class="text-primary">로그인</a> 후 답글을 남길 수 있습니다.
+        </div>
+    {% endif %}
+    {% if comment.child_comment_count %}
+        <div class="mt-4">
+            <button type="button"
+                    hx-get="{% url 'community_comment_children' post.id comment.id %}"
+                    hx-target="#comment-children-{{ comment.id }}"
+                    hx-swap="innerHTML"
+                    {% if comment.child_comments %}hidden{% endif %}
+                    class="rounded-full bg-surface-container-high px-3 py-1 text-xs font-semibold text-primary">
+                답글 {{ comment.child_comment_count }}개 보기
+            </button>
+        </div>
+    {% endif %}
+    <div id="comment-children-{{ comment.id }}"
+         class="mt-4 space-y-3 border-l border-outline-variant/70 pl-4">
+        {% for comment in comment.child_comments %}
+            {% include "partials/community_comment_thread.html" %}
+        {% endfor %}
+    </div>
+</article>

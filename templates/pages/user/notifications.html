@@ -1,0 +1,10 @@
+{% extends "layouts/app.html" %}
+{% block title %}
+    HiveWiki | 알림
+{% endblock title %}
+{% block app_content %}
+    <section class="mx-auto max-w-5xl space-y-8">
+        {% include "partials/section_header.html" with eyebrow="Notifications" title="알림" description="" %}
+        {% include "partials/notifications_panel.html" %}
+    </section>
+{% endblock app_content %}

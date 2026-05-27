@@ -1,0 +1,56 @@
+{% load static %}
+{% load tz %}
+<!DOCTYPE html>
+<html lang="ko">
+    {% get_current_timezone as CURRENT_TIME_ZONE %}
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>
+            {% block title %}
+                HiveWiki
+            {% endblock title %}
+        </title>
+        <link rel="icon" href="{% static 'favicon.ico' %}" sizes="any">
+        <meta name="description"
+              content="HiveWiki는 공동체의 질문과 문서를 연결하는 서버 렌더링 기반 지식 허브입니다.">
+        <meta name="keywords" content="HiveWiki, Django, HTMX, Wiki, Community">
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Manrope:wght@200..800&display=swap"
+              rel="stylesheet">
+        <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+        {% if enable_math_rendering %}
+            <link rel="stylesheet"
+                  href="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css">
+            <script defer
+                    src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js"></script>
+            <script defer
+                    src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/contrib/auto-render.min.js"></script>
+        {% endif %}
+        <link rel="stylesheet" href="{% static 'css/dist/styles.css' %}">
+        <link rel="stylesheet" href="{% static 'css/app.css' %}">
+        <noscript>
+            <style>
+      .js-timezone-pending .timezone-sensitive {
+        visibility: visible;
+      }
+            </style>
+        </noscript>
+        {% block head %}
+        {% endblock head %}
+    </head>
+    <body class="js-timezone-pending bg-surface font-body text-on-surface antialiased"
+          data-current-timezone="{{ CURRENT_TIME_ZONE }}"
+          data-timezone-sync-url="{% url 'set_timezone' %}">
+        <form id="timezone-sync-form" class="hidden">
+            {% csrf_token %}
+        </form>
+        {% include "partials/flash.html" %}
+        {% block body %}
+        {% endblock body %}
+        <script src="{% static 'js/app.js' %}"></script>
+        {% block script %}
+        {% endblock script %}
+    </body>
+</html>

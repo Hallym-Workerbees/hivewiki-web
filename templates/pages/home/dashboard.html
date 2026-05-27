@@ -1,0 +1,44 @@
+{% extends "layouts/app.html" %}
+{% block title %}
+    HiveWiki | Dashboard
+{% endblock title %}
+{% block app_content %}
+    <section class="mx-auto max-w-7xl space-y-12">
+        <section class="rounded-[2rem] bg-surface-container-low p-8">
+            <div class="max-w-4xl">
+                <h1 class="font-headline text-5xl font-black tracking-tight">대시보드</h1>
+                <div class="mt-6 max-w-3xl">
+                    {% include "partials/search_bar.html" with placeholder="검색" action="/search/" target="#dashboard-search-results" push_url="false" %}
+                </div>
+            </div>
+            <div class="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {% for stat in dashboard_stats %}
+                    {% include "partials/stat_tile.html" with label=stat.label value=stat.value description=stat.description %}
+                {% endfor %}
+            </div>
+        </section>
+        <div id="dashboard-search-results"></div>
+        <section class="space-y-5">
+            {% include "partials/section_header.html" with eyebrow="Wiki" title="최신 위키" description="최근 업데이트된 문서" href="/wiki/" link_text="전체 보기" %}
+            <div class="grid gap-5 lg:grid-cols-2">
+                {% for item in wiki_items %}
+                    {% include "partials/wiki_card.html" %}
+                {% empty %}
+                    <div class="lg:col-span-2">
+                        {% include "partials/empty_state.html" with title="표시할 위키 문서가 없습니다" description="공개된 위키 문서가 생기면 이 영역에 표시됩니다." %}
+                    </div>
+                {% endfor %}
+            </div>
+        </section>
+        <section class="space-y-5">
+            {% include "partials/section_header.html" with eyebrow="Community" title="최신 커뮤니티 글" description="최근 게시글" href="/community/" link_text="전체 보기" %}
+            <div class="space-y-5">
+                {% for item in post_items %}
+                    {% include "partials/post_card.html" %}
+                {% empty %}
+                    {% include "partials/empty_state.html" with title="표시할 게시글이 없습니다" description="공개된 커뮤니티 게시글이 생기면 이 영역에 표시됩니다." %}
+                {% endfor %}
+            </div>
+        </section>
+    </section>
+{% endblock app_content %}

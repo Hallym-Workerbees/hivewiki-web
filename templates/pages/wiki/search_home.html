@@ -1,0 +1,17 @@
+{% extends "layouts/app.html" %}
+{% block title %}
+    HiveWiki | 위키
+{% endblock title %}
+{% block app_content %}
+    <section class="mx-auto max-w-7xl space-y-8">
+        {% include "partials/section_header.html" with eyebrow="Wiki" title="위키 둘러보기" %}
+        <div class="rounded-[2rem] bg-surface-container-low p-8">
+            <h2 class="font-headline text-4xl font-black tracking-tight">찾고 싶은 문서를 바로 검색하세요</h2>
+            <div class="mt-8 max-w-3xl">
+                {% include "partials/search_bar.html" with placeholder="운영, 수업, 개발, 회고를 검색하세요" action="/wiki/" target="#wiki-search-results" push_url="false" value=query %}
+            </div>
+            <div id="wiki-search-results" class="mt-6">{% include "partials/wiki_search_results.html" %}</div>
+        </div>
+    </section>
+    {% include "partials/wiki_write_fab.html" %}
+{% endblock app_content %}

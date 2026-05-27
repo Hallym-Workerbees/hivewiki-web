@@ -1,0 +1,251 @@
+{% extends "layouts/app.html" %}
+{% block title %}
+    HiveWiki | 마이페이지
+{% endblock title %}
+{% block app_content %}
+    <section class="mx-auto max-w-7xl space-y-8">
+        {% include "partials/section_header.html" with eyebrow="My Page" title="내 계정" description="계정 정보와 활동" %}
+        <div class="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+            <section class="rounded-[2rem] bg-surface-container-low p-8">
+                <div class="flex items-center gap-5">
+                    {% if profile_user.profile_image %}
+                        <img src="{{ profile_user.profile_image }}"
+                             alt="{{ profile_user.username }} 프로필 이미지"
+                             width="80"
+                             height="80"
+                             class="h-20 w-20 rounded-[1.75rem] object-cover">
+                    {% else %}
+                        <div class="flex h-20 w-20 items-center justify-center rounded-[1.75rem] bg-primary-container text-3xl font-black text-on-primary-container">
+                            {{ profile_user.username|first|upper }}
+                        </div>
+                    {% endif %}
+                    <div>
+                        <div class="text-xs uppercase tracking-[0.24em] text-stone-400">{{ profile_user.role }}</div>
+                        <h1 class="mt-2 font-headline text-4xl font-black tracking-tight">{{ profile_user.username }}</h1>
+                        <p class="mt-2 text-sm text-on-surface-variant">{{ profile_user.email }}</p>
+                    </div>
+                </div>
+                <div class="mt-8 flex flex-wrap gap-3">
+                    <a href="{% url 'profile_edit' %}"
+                       class="inline-flex rounded-2xl bg-primary-container px-5 py-3 text-sm font-bold text-on-primary-container">프로필 수정</a>
+                    <a href="{% url 'mypage_notifications' %}"
+                       class="inline-flex rounded-2xl bg-surface-container-high px-5 py-3 text-sm font-semibold text-primary">알림 보기</a>
+                    {% if not password_login_disabled %}
+                        <a href="{% url 'password_change' %}"
+                           class="inline-flex rounded-2xl bg-surface-container-high px-5 py-3 text-sm font-semibold text-primary">비밀번호 변경</a>
+                    {% endif %}
+                </div>
+            </section>
+            <section class="grid gap-4 sm:grid-cols-2">
+                {% include "partials/stat_tile.html" with label="상태" value=profile_user.status description="현재 계정 상태입니다." %}
+                {% include "partials/stat_tile.html" with label="가입일" value=profile_user.created_at|date:"Y.m.d" value_datetime=profile_user.created_at value_format="date" value_class="timezone-sensitive" description="HiveWiki에 처음 등록된 날짜입니다." %}
+                {% for stat in activity_stats %}
+                    {% include "partials/stat_tile.html" with label=stat.label value=stat.value description=stat.description %}
+                {% endfor %}
+            </section>
+        </div>
+        <section class="rounded-[2rem] bg-surface-container-low p-8">
+            <div class="flex items-end justify-between gap-4">
+                <div>
+                    <div class="text-xs uppercase tracking-[0.24em] text-stone-400">Activity</div>
+                    <h2 class="mt-2 font-headline text-3xl font-black tracking-tight">내가 쓴 글</h2>
+                </div>
+                <a href="{{ recent_posts_url }}"
+                   class="text-sm font-semibold text-primary">전체 보기</a>
+            </div>
+            {% if recent_posts %}
+                <div class="mt-6 space-y-4">
+                    {% for post in recent_posts %}
+                        <article class="rounded-[1.5rem] bg-white p-5">
+                            <div class="flex items-start justify-between gap-4">
+                                <div class="min-w-0">
+                                    <a href="{{ post.get_absolute_url }}"
+                                       class="line-clamp-1 text-lg font-bold text-on-surface">{{ post.title|default:"제목 없는 게시글" }}</a>
+                                    <p class="mt-2 line-clamp-2 text-sm leading-7 text-on-surface-variant">{{ post.summary|default:"내용이 아직 없습니다." }}</p>
+                                </div>
+                                {% if post.status == "draft" %}
+                                    <span class="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-700">draft</span>
+                                {% endif %}
+                            </div>
+                            <div class="mt-4 flex flex-wrap items-center gap-3 text-xs text-stone-500">
+                                <time class="timezone-sensitive"
+                                      data-local-datetime="{{ post.created_at|date:'c' }}"
+                                      data-local-format="datetime">{{ post.created_at|date:"Y.m.d H:i" }}</time>
+                                <span>댓글 {{ post.comment_count }}</span>
+                                <span>좋아요 {{ post.like_count }}</span>
+                                <span>연결 위키 {{ post.wiki_documents.count }}</span>
+                            </div>
+                            {% if post.tags.all %}
+                                <div class="mt-4 flex flex-wrap gap-2">
+                                    {% for tag in post.tags.all %}
+                                        <span class="rounded-full bg-secondary-container px-3 py-1 text-xs font-medium text-on-secondary-container">#{{ tag.name }}</span>
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </article>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <p class="mt-6 text-sm leading-7 text-on-surface-variant">아직 작성한 게시글이 없습니다. 첫 글을 남겨보세요.</p>
+            {% endif %}
+        </section>
+        <section class="grid gap-6 xl:grid-cols-2">
+            <section class="rounded-[2rem] bg-surface-container-low p-8">
+                <div class="text-xs uppercase tracking-[0.24em] text-stone-400">Reactions</div>
+                <h2 class="mt-2 font-headline text-3xl font-black tracking-tight">좋아요한 게시글</h2>
+                <a href="{{ liked_posts_url }}"
+                   class="mt-2 inline-block text-sm font-semibold text-primary">전체 보기</a>
+                {% if liked_posts %}
+                    <div class="mt-6 space-y-4">
+                        {% for item in liked_posts %}
+                            <article class="rounded-[1.5rem] bg-white p-5">
+                                <a href="{{ item.post.get_absolute_url }}"
+                                   class="line-clamp-1 text-lg font-bold text-on-surface">{{ item.post.title|default:"제목 없는 게시글" }}</a>
+                                <p class="mt-2 line-clamp-2 text-sm leading-7 text-on-surface-variant">
+                                    {{ item.post.summary|default:"내용이 아직 없습니다." }}
+                                </p>
+                                <div class="mt-4 text-xs text-stone-500">
+                                    좋아요 누른 시각
+                                    <time class="timezone-sensitive"
+                                          data-local-datetime="{{ item.created_at|date:'c' }}"
+                                          data-local-format="datetime">{{ item.created_at|date:"Y.m.d H:i" }}</time>
+                                </div>
+                            </article>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="mt-6 text-sm leading-7 text-on-surface-variant">아직 좋아요한 게시글이 없습니다.</p>
+                {% endif %}
+            </section>
+            <section class="rounded-[2rem] bg-surface-container-low p-8">
+                <div class="text-xs uppercase tracking-[0.24em] text-stone-400">Reactions</div>
+                <h2 class="mt-2 font-headline text-3xl font-black tracking-tight">좋아요한 댓글의 게시글</h2>
+                <a href="{{ liked_comments_url }}"
+                   class="mt-2 inline-block text-sm font-semibold text-primary">전체 보기</a>
+                {% if liked_comment_items %}
+                    <div class="mt-6 space-y-4">
+                        {% for item in liked_comment_items %}
+                            <article class="rounded-[1.5rem] bg-white p-5">
+                                <a href="{{ item.comment.post.get_absolute_url }}?comment={{ item.comment.id }}#comment-{{ item.comment.id }}"
+                                   class="line-clamp-1 text-lg font-bold text-on-surface">{{ item.comment.post.title|default:"제목 없는 게시글" }}</a>
+                                <p class="mt-2 line-clamp-2 text-sm leading-7 text-on-surface-variant">
+                                    {{ item.comment.content|default:"삭제되었거나 비어 있는 댓글입니다." }}
+                                </p>
+                                <div class="mt-4 text-xs text-stone-500">
+                                    댓글 좋아요 시각
+                                    <time class="timezone-sensitive"
+                                          data-local-datetime="{{ item.created_at|date:'c' }}"
+                                          data-local-format="datetime">{{ item.created_at|date:"Y.m.d H:i" }}</time>
+                                </div>
+                            </article>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="mt-6 text-sm leading-7 text-on-surface-variant">아직 좋아요한 댓글이 없습니다.</p>
+                {% endif %}
+            </section>
+        </section>
+        <section class="grid gap-6 xl:grid-cols-2">
+            <section class="rounded-[2rem] bg-surface-container-low p-8">
+                <div class="text-xs uppercase tracking-[0.24em] text-stone-400">Saved</div>
+                <h2 class="mt-2 font-headline text-3xl font-black tracking-tight">북마크한 게시글</h2>
+                <a href="{{ bookmarked_posts_url }}"
+                   class="mt-2 inline-block text-sm font-semibold text-primary">전체 보기</a>
+                {% if bookmarked_posts %}
+                    <div class="mt-6 space-y-4">
+                        {% for item in bookmarked_posts %}
+                            <article class="rounded-[1.5rem] bg-white p-5">
+                                <a href="{{ item.post.get_absolute_url }}"
+                                   class="line-clamp-1 text-lg font-bold text-on-surface">{{ item.post.title|default:"제목 없는 게시글" }}</a>
+                                <p class="mt-2 line-clamp-2 text-sm leading-7 text-on-surface-variant">
+                                    {{ item.post.summary|default:"내용이 아직 없습니다." }}
+                                </p>
+                                <div class="mt-4 text-xs text-stone-500">
+                                    북마크한 시각
+                                    <time class="timezone-sensitive"
+                                          data-local-datetime="{{ item.created_at|date:'c' }}"
+                                          data-local-format="datetime">{{ item.created_at|date:"Y.m.d H:i" }}</time>
+                                </div>
+                            </article>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="mt-6 text-sm leading-7 text-on-surface-variant">아직 북마크한 게시글이 없습니다.</p>
+                {% endif %}
+            </section>
+            <section class="rounded-[2rem] bg-surface-container-low p-8">
+                <div class="text-xs uppercase tracking-[0.24em] text-stone-400">Saved</div>
+                <h2 class="mt-2 font-headline text-3xl font-black tracking-tight">북마크한 위키</h2>
+                <a href="{{ bookmarked_wiki_url }}"
+                   class="mt-2 inline-block text-sm font-semibold text-primary">전체 보기</a>
+                {% if bookmarked_wiki_items %}
+                    <div class="mt-6 space-y-4">
+                        {% for item in bookmarked_wiki_items %}
+                            <article class="rounded-[1.5rem] bg-white p-5">
+                                <a href="{% url 'wiki_detail' item.wiki_document.slug %}"
+                                   class="line-clamp-1 text-lg font-bold text-on-surface">{{ item.wiki_document.title }}</a>
+                                <p class="mt-2 line-clamp-2 text-sm leading-7 text-on-surface-variant">{{ item.wiki_document.summary }}</p>
+                            </article>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="mt-6 text-sm leading-7 text-on-surface-variant">아직 북마크한 위키가 없습니다.</p>
+                {% endif %}
+            </section>
+        </section>
+        <section class="rounded-[2rem] bg-surface-container-low p-8">
+            <div class="text-xs uppercase tracking-[0.24em] text-stone-400">Login Methods</div>
+            <h2 class="mt-2 font-headline text-3xl font-black tracking-tight">로그인 방식</h2>
+            {% if password_login_disabled %}
+                <p class="mt-4 text-sm leading-7 text-on-surface-variant">이 계정은 현재 비밀번호가 설정되어 있지 않아 OAuth 로그인만 사용할 수 있습니다.</p>
+            {% else %}
+                <p class="mt-4 text-sm leading-7 text-on-surface-variant">현재는 이메일/비밀번호 로그인과 OAuth 로그인을 함께 사용할 수 있습니다.</p>
+            {% endif %}
+            <div class="mt-6 grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+                <div class="rounded-[1.75rem] bg-white p-6">
+                    <div class="text-xs uppercase tracking-[0.18em] text-stone-400">연결된 OAuth</div>
+                    {% if oauth_accounts %}
+                        <div class="mt-4 space-y-3">
+                            {% for account in oauth_accounts %}
+                                <div class="rounded-2xl bg-surface-container-low px-4 py-4">
+                                    <div class="flex items-center justify-between gap-4">
+                                        <div class="font-semibold text-on-surface">{{ account.get_provider_display }}</div>
+                                        <span class="rounded-full bg-secondary-container px-3 py-1 text-xs font-semibold text-on-secondary-container">{{ account.provider|upper }}</span>
+                                    </div>
+                                    {% if account.last_login_at %}
+                                        <div class="mt-2 text-xs text-on-surface-variant timezone-sensitive"
+                                             data-local-datetime="{{ account.last_login_at|date:'c' }}"
+                                             data-local-format="datetime">
+                                            {{ account.last_login_at|date:"Y.m.d H:i" }}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="mt-4 text-sm text-on-surface-variant">아직 연결된 OAuth 계정이 없습니다.</p>
+                    {% endif %}
+                </div>
+                <div class="rounded-[1.75rem] bg-white p-6">
+                    <div class="text-xs uppercase tracking-[0.18em] text-stone-400">OAuth 연결</div>
+                    <p class="mt-3 text-sm leading-7 text-on-surface-variant">
+                        현재 계정 이메일과 같은 OAuth 계정만 연결할 수 있습니다. 연결 후에도 기존 비밀번호 로그인은 유지됩니다.
+                    </p>
+                    {% if available_oauth_link_providers %}
+                        <div class="mt-5 grid gap-3">
+                            {% for oauth_provider in available_oauth_link_providers %}
+                                <a href="{{ oauth_provider.start_url }}"
+                                   class="flex items-center justify-between rounded-[1.4rem] border border-stone-200/90 bg-surface-container-low px-4 py-3.5 text-sm font-semibold text-on-surface transition hover:-translate-y-0.5 hover:border-stone-300 hover:bg-stone-50">
+                                    <span>{{ oauth_provider.label }} 연결</span>
+                                    <span class="text-stone-400">{{ profile_user.email }}</span>
+                                </a>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="mt-4 text-sm text-on-surface-variant">연결 가능한 OAuth provider가 더 이상 없습니다.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+    </section>
+{% endblock app_content %}

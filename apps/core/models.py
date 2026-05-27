@@ -670,8 +670,10 @@ class WikiRevisionSource(models.Model):
     )
     source_chunk = models.ForeignKey(
         SourceChunk,
-        on_delete=models.RESTRICT,
+        on_delete=models.SET_NULL,
         related_name="wiki_revision_sources",
+        blank=True,
+        null=True,
     )
     evidence_text = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(default=timezone.now, editable=False)

@@ -200,6 +200,8 @@ def _get_source_chunk_embedding_centroid(document, *, embedding_model: str):
         "source_chunk"
     ).prefetch_related("source_chunk__embeddings"):
         source_chunk = revision_source.source_chunk
+        if source_chunk is None:
+            continue
         if source_chunk.pk in seen_chunk_ids:
             continue
         seen_chunk_ids.add(source_chunk.pk)

@@ -1065,7 +1065,8 @@ def _get_related_wiki_documents(document, *, limit=4):
 
     source_document_ids = list(
         WikiRevisionSource.objects.filter(
-            wiki_revision_id=document.current_revision_id
+            wiki_revision_id=document.current_revision_id,
+            source_chunk__isnull=False,
         ).values_list("source_chunk__source_document_id", flat=True)
     )
     related_documents: list[WikiDocument] = []
@@ -1205,6 +1206,7 @@ def _get_document_source_document_ids(document):
     return {
         revision_source.source_chunk.source_document_id
         for revision_source in document.current_revision.sources.all()
+        if revision_source.source_chunk is not None
     }
 
 

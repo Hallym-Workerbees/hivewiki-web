@@ -99,7 +99,9 @@
                 </div>
                 {% if post_form.wiki_documents.errors %}
                     <div class="mt-3 space-y-1">
-                        {% for error in post_form.wiki_documents.errors %}<p class="text-sm text-red-700">{{ error }}</p>{% endfor %}
+                        {% for error in post_form.wiki_documents.errors %}
+                            <p class="text-sm text-red-700">{{ error }}</p>
+                        {% endfor %}
                     </div>
                 {% endif %}
                 <div class="mt-4" hx-include="#community-wiki-selected">

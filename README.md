@@ -1,5 +1,7 @@
 # HiveWiki Web
 
+🏆 2026학년도 1학기 한림대학교 SW캡스톤디자인 경진대회 금상 수상 프로젝트
+
 HiveWiki Web은 HiveWiki 프로젝트의 Django 기반 웹 애플리케이션입니다.
 
 ## Highlights

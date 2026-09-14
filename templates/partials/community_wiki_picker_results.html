@@ -40,9 +40,9 @@
                             data-community-wiki-option-label
                             {% if wiki_document.pk|stringformat:'s' in locked_wiki_document_ids %}disabled{% endif %}
                             data-community-wiki-action>
-                        {% if wiki_document.pk|stringformat:'s' in locked_wiki_document_ids %}
+                        {% if wiki_document.pk|stringformat:"s" in locked_wiki_document_ids %}
                             기본 참조
-                        {% elif wiki_document.pk|stringformat:'s' in selected_wiki_document_ids %}
+                        {% elif wiki_document.pk|stringformat:"s" in selected_wiki_document_ids %}
                             제거
                         {% else %}
                             추가

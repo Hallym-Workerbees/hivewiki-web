@@ -136,7 +136,9 @@
             {% if toc_items or related_wiki_items or referencing_posts_url %}
                 <aside class="sticky top-28 hidden space-y-4 self-start xl:block">
                     {% if toc_items %}
-                        <div class="rounded-[1.5rem] bg-surface-container-low p-5">{% include "partials/wiki_toc_nav.html" %}</div>
+                        <div class="rounded-[1.5rem] bg-surface-container-low p-5">
+                            {% include "partials/wiki_toc_nav.html" %}
+                        </div>
                     {% endif %}
                     {% include "partials/wiki_related_sidebar.html" %}
                     {% include "partials/wiki_referencing_posts_card.html" %}
